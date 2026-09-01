@@ -11,14 +11,19 @@ export default function OrderPanel({ code, name, price }: { code: string; name: 
   async function submitOrder() {
     setLoading(true);
     setMessage("");
-    const response = await fetch("/api/paper/orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, side, shares: Number(shares), price })
-    });
-    const payload = await response.json();
-    setMessage(response.ok ? `模拟${side === "BUY" ? "买入" : "卖出"}已创建 · ${payload.orderId}` : payload.error);
-    setLoading(false);
+    try {
+      const response = await fetch("/api/paper/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, side, shares: Number(shares), price })
+      });
+      const payload = await response.json();
+      setMessage(response.ok ? `模拟${side === "BUY" ? "买入" : "卖出"}已创建 · ${payload.orderId}` : payload.error);
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "模拟订单提交失败，请稍后重试");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (

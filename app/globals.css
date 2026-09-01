@@ -99,3 +99,7 @@ button { cursor:pointer; }
 .auth-error { margin:15px 0 0; font-size:10px; line-height:1.5; }
 .invite-help { color:var(--muted); font-size:10px; line-height:1.7; text-align:center; margin:0; }
 .invite-help code { color:var(--cyan); font:10px 'DM Mono',monospace; }
+.invite-manager { display:grid; gap:14px; }
+.invite-list { display:grid; gap:8px; max-height:132px; overflow:auto; }
+.invite-list .invite-code { display:flex; align-items:center; gap:9px; padding:10px; }
+.invite-list .invite-code small { margin-left:auto; color:var(--muted); font-size:9px; }

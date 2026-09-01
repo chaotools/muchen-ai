@@ -49,3 +49,13 @@ export async function verifySession(token: string | undefined): Promise<SessionP
     return null;
   }
 }
+
+export async function getSessionFromRequest(request: Request) {
+  const cookie = request.headers.get("cookie")?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${sessionCookieName}=`));
+  return verifySession(cookie?.slice(sessionCookieName.length + 1));
+}
+
+export function isAdminEmail(email: string) {
+  const admins = (process.env.MUCHEN_ADMIN_EMAILS ?? "").split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
+  return admins.length > 0 ? admins.includes(email.toLowerCase()) : process.env.NODE_ENV !== "production";
+}

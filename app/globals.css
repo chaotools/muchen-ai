@@ -94,3 +94,8 @@ button { cursor:pointer; }
 @media (max-width:700px) { .research-workspace { padding:17px; }.research-form { grid-template-columns:1fr; }.research-form-foot { align-items:flex-start; flex-direction:column; gap:13px; }.research-form-foot .primary-button { width:100%; } }
 .provider-check { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 .provider-check small { font-size:10px; line-height:1.5; }
+.logout-button { border:0; background:transparent; color:#68839b; font-size:10px; padding:5px 0 5px 8px; }
+.logout-button:hover { color:var(--red); }
+.auth-error { margin:15px 0 0; font-size:10px; line-height:1.5; }
+.invite-help { color:var(--muted); font-size:10px; line-height:1.7; text-align:center; margin:0; }
+.invite-help code { color:var(--cyan); font:10px 'DM Mono',monospace; }

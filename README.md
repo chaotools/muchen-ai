@@ -8,6 +8,7 @@
 - 简体中文深色投研界面
 - 市场驾驶舱、个股详情、AI 分析、自选股、模拟持仓、市场筛选、管理台
 - 全局股票搜索、问题驱动研究工作台、AI 评分筛选和本地自选状态
+- 客服邀请码登录、7 天签名会话和未登录路由保护
 - 默认使用演示数据，方便在没有 iFinD Key 时直接运行
 - 已预留 iFinD MCP 和 OpenAI 兼容模型的服务端配置
 - 模拟订单只返回演示成交，不连接券商、不触及真实资金
@@ -33,6 +34,10 @@ npm run dev
 ## 环境变量
 
 复制 `.env.example` 为 `.env.local`。首版默认 `MUCHEN_DATA_MODE=demo`。
+
+## 邀请制登录
+
+所有业务页面和 API 默认需要登录。客服邀请码由 `MUCHEN_INVITE_CODE` 在服务端校验，登录后签发 7 天 HttpOnly 签名 Cookie。生产环境必须设置 `MUCHEN_SESSION_SECRET` 和 `MUCHEN_INVITE_CODE`，缺少任一配置时会拒绝登录；后续再将邀请码迁移到数据库或后台管理服务。
 
 后续接入 iFinD MCP 时，Key 只能放在服务端环境变量中，不能放到浏览器端：
 

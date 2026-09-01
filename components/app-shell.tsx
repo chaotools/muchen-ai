@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import StockSearch from "@/components/stock-search";
+import LogoutButton from "@/components/logout-button";
 
 const navItems = [
   { href: "/", label: "市场驾驶舱", icon: "◈" },
@@ -51,7 +52,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="user-chip">
             <span className="avatar">M</span>
             <span><strong>研究员</strong><small>演示工作区</small></span>
-            <span className="more">•••</span>
+            <LogoutButton />
           </div>
         </div>
       </aside>

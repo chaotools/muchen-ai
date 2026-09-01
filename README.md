@@ -21,6 +21,8 @@
 - `/watchlist`：自选股观察
 - `/portfolio`：模拟持仓和模拟订单
 - `/admin`：数据供应商和服务状态
+- `/support/login`：客服工作台登录
+- `/support`：客服独立邀请码管理
 
 ## 启动
 
@@ -40,6 +42,10 @@ npm run dev
 所有业务页面和 API 默认需要登录。客服邀请码由 `MUCHEN_INVITE_CODE` 在服务端校验，登录后签发 7 天 HttpOnly 签名 Cookie。生产环境必须设置 `MUCHEN_SESSION_SECRET` 和 `MUCHEN_INVITE_CODE`，缺少任一配置时会拒绝登录；后续再将邀请码迁移到数据库或后台管理服务。
 
 配置 `DATABASE_URL` 后执行 `db/schema.sql`，登录用户、邀请码、兑换记录、自选股、模拟订单和研究报告即可进入 PostgreSQL 持久化层。`MUCHEN_ADMIN_EMAILS` 用逗号分隔管理员邮箱；未配置时，开发环境的已登录账号可进入邀请管理，生产环境默认没有管理员。
+
+## 客服工作台
+
+客服使用独立入口 `/support/login`，与用户侧登录 Cookie 分开。配置 `MUCHEN_SUPPORT_EMAILS`、`MUCHEN_SUPPORT_ACCESS_KEY` 和 `MUCHEN_SUPPORT_SESSION_SECRET` 后，客服可以独立生成、复制、搜索和撤销邀请码。没有 `DATABASE_URL` 时，客服工作台使用进程内演示存储；配置 PostgreSQL 并执行表结构后，邀请码才会持久化。
 
 后续接入 iFinD MCP 时，Key 只能放在服务端环境变量中，不能放到浏览器端：
 

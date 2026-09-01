@@ -1,0 +1,8 @@
+import AppShell from "@/components/app-shell";
+import ProviderCheck from "@/components/provider-check";
+import { getProviderInfo } from "@/lib/market";
+
+export default function AdminPage() {
+  const provider = getProviderInfo();
+  return <AppShell><div className="page-wrap"><section className="hero-row"><div><span className="eyebrow">CONTROL CENTER</span><h1>控制中心</h1><p className="hero-subtitle">管理邀请、数据连接和模拟研究环境。</p></div><span className="paper-badge">ADMIN</span></section><div className="admin-grid"><div className="market-card admin-card"><span className="eyebrow">DATA PROVIDER</span><h2>{provider.label}</h2><div className="connection-state"><span className="status-dot" />{provider.note}</div><p>首版通过统一 Provider 接口隔离供应商。后续接入同花顺直接 API 时，不改页面和模拟交易模块。</p><ProviderCheck /></div><div className="market-card admin-card"><span className="eyebrow">INVITATIONS</span><h2>试用邀请</h2><div className="invite-code">MC-7DAY-DEMO <button>复制</button></div><p>默认 7 天试用 · 2000 次研究数据请求预算（待接入真实计费）。</p><button className="primary-button">生成新邀请码 <span>＋</span></button></div><div className="market-card admin-card"><span className="eyebrow">SERVICE HEALTH</span><h2>服务状态</h2><div className="health-list"><div><span>Web 应用</span><strong className="positive">正常</strong></div><div><span>模拟交易引擎</span><strong className="positive">正常</strong></div><div><span>AI 服务</span><strong className="warning">待配置</strong></div><div><span>行情服务</span><strong className={provider.mode === "demo" ? "warning" : "positive"}>{provider.mode === "demo" ? "演示" : "正常"}</strong></div></div></div></div><div className="info-banner"><span>!</span><p>正式公网部署前，需要确认 iFinD MCP Key 允许多用户 SaaS 使用和数据再分发，并将真实 Key 放入服务器密钥管理，不要提交到 Git。</p></div></div></AppShell>;
+}

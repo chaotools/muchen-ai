@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import ResearchProgress from "@/components/research-progress";
 
 type Report = {
   conclusion: string;
   confidence: string;
   positives: string[];
   risks: string[];
+  dataStatus?: string;
   asOf: string;
 };
 
@@ -41,6 +43,7 @@ export default function ResearchButton({ code }: { code: string }) {
         <span>↗</span>
       </button>
       {error && <p className="form-error">{error}</p>}
+      {loading && <div className="inline-progress"><ResearchProgress compact /></div>}
       {report && (
         <div className="inline-report">
           <div className="report-head"><span className="eyebrow">MUCHEN RESEARCH NOTE</span><span className="confidence">置信度 {report.confidence}</span></div>
@@ -49,7 +52,7 @@ export default function ResearchButton({ code }: { code: string }) {
             <div><span className="report-label positive-text">支持因素</span>{report.positives.map((item) => <p key={item}>＋ {item}</p>)}</div>
             <div><span className="report-label negative-text">风险边界</span>{report.risks.map((item) => <p key={item}>－ {item}</p>)}</div>
           </div>
-          <small className="muted">数据时间：{report.asOf} · 当前为演示数据，接入 iFinD MCP 后替换为真实证据。</small>
+          <small className="muted">数据时间：{report.asOf} · 数据来源：{report.dataStatus ?? "演示数据"}。</small>
         </div>
       )}
     </div>

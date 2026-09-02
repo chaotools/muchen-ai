@@ -54,6 +54,8 @@ export type Topic = {
   history: TopicHistoryPoint[];
   events: TopicEvent[];
   relations: TopicRelation[];
+  dataStatus?: "demo" | "free-data";
+  asOf?: string;
 };
 
 export const topicLatestDate = "2026-09-01";

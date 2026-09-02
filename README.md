@@ -33,9 +33,33 @@ npm run dev
 
 打开 <http://localhost:3000>。
 
+## 本地免费数据服务
+
+项目提供一个独立的免费数据网关，不把数据供应商代码耦合进 Next.js。它以腾讯财经公开行情提供最新交易日行情和前复权日 K 线，BaoStock 仅在主源不可用时兜底；同花顺公开页面适配用于题材成分。首次启动会在项目目录创建 `.venv-free-data` 并安装所需依赖。启动网关后，在本地 `.env.local` 中将前端切到真实数据模式：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-free-data.ps1
+```
+
+服务地址为 <http://127.0.0.1:8090>，接口文档为 <http://127.0.0.1:8090/docs>。
+
+```env
+MUCHEN_DATA_MODE=free-data
+MUCHEN_DATA_SERVICE_URL=http://127.0.0.1:8090
+```
+
+切换后，首页、自选、筛选、个股详情和题材页会从本地网关读取数据；题材热度和趋势是用公开题材成分股的腾讯财经行情样本计算的，事件流、完整财务和公告原文仍需后续接入专门数据源。
+
+- `GET /health`：服务健康状态
+- `GET /api/stock/600519.SH/history`：免费历史 K 线
+- `GET /api/stock/000001.SZ/concepts`：股票所属同花顺题材
+- `GET /api/topic/885966/members`：同花顺题材成分股
+
+免费公开数据仅用于本地研究和模拟，不能据此承诺商业再分发或实时稳定性；如需稳定的盘中行情、完整财务、公告与新闻，请替换为已授权的数据供应商。
+
 ## 环境变量
 
-复制 `.env.example` 为 `.env.local`。首版默认 `MUCHEN_DATA_MODE=demo`。
+复制 `.env.example` 为 `.env.local`。仓库示例默认 `MUCHEN_DATA_MODE=demo`；本地免费数据模式请改为 `free-data` 并启动 8090 网关。
 
 ## 邀请制登录
 

@@ -1,21 +1,29 @@
 import { createSignedSession, sessionDurationSeconds, verifySignedSession, type SessionPayload } from "@/lib/auth";
 
 export const supportCookieName = "muchen_support_session";
+const minimumSecretLength = 32;
 
 function getSupportSecret() {
-  if (process.env.MUCHEN_SUPPORT_SESSION_SECRET) return process.env.MUCHEN_SUPPORT_SESSION_SECRET;
-  if (process.env.NODE_ENV === "production") throw new Error("MUCHEN_SUPPORT_SESSION_SECRET 未配置");
-  return "muchen-local-support-session-secret-change-me";
+  return process.env.MUCHEN_SUPPORT_SESSION_SECRET?.trim() ?? "";
 }
 
 export function getSupportAccessKey() {
-  if (process.env.MUCHEN_SUPPORT_ACCESS_KEY) return process.env.MUCHEN_SUPPORT_ACCESS_KEY;
-  return process.env.NODE_ENV === "production" ? "" : "MUCHEN-SUPPORT-DEMO";
+  return process.env.MUCHEN_SUPPORT_ACCESS_KEY?.trim() ?? "";
+}
+
+function getSupportEmails() {
+  return (process.env.MUCHEN_SUPPORT_EMAILS ?? "").split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
+}
+
+export function getSupportConfigurationError() {
+  if (getSupportEmails().length === 0) return "MUCHEN_SUPPORT_EMAILS 未配置";
+  if (getSupportAccessKey().length < minimumSecretLength) return "MUCHEN_SUPPORT_ACCESS_KEY 必须至少 32 个字符";
+  if (getSupportSecret().length < minimumSecretLength) return "MUCHEN_SUPPORT_SESSION_SECRET 必须至少 32 个字符";
+  return null;
 }
 
 export function isSupportEmail(email: string) {
-  const emails = (process.env.MUCHEN_SUPPORT_EMAILS ?? process.env.MUCHEN_ADMIN_EMAILS ?? "").split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
-  return emails.length > 0 ? emails.includes(email.toLowerCase()) : process.env.NODE_ENV !== "production";
+  return getSupportEmails().includes(email.toLowerCase());
 }
 
 export async function createSupportSession(email: string) {
@@ -23,6 +31,7 @@ export async function createSupportSession(email: string) {
 }
 
 export async function verifySupportSession(token: string | undefined): Promise<SessionPayload | null> {
+  if (getSupportConfigurationError()) return null;
   try {
     return await verifySignedSession(token, getSupportSecret());
   } catch {

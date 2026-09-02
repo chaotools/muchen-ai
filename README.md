@@ -45,7 +45,15 @@ npm run dev
 
 ## 客服工作台
 
-客服使用独立入口 `/support/login`，与用户侧登录 Cookie 分开。配置 `MUCHEN_SUPPORT_EMAILS`、`MUCHEN_SUPPORT_ACCESS_KEY` 和 `MUCHEN_SUPPORT_SESSION_SECRET` 后，客服可以独立生成、复制、搜索和撤销邀请码。没有 `DATABASE_URL` 时，客服工作台使用进程内演示存储；配置 PostgreSQL 并执行表结构后，邀请码才会持久化。
+客服使用独立入口 `/support/login`，与用户侧登录 Cookie 分开。必须配置 `MUCHEN_SUPPORT_EMAILS`、`MUCHEN_SUPPORT_ACCESS_KEY` 和 `MUCHEN_SUPPORT_SESSION_SECRET` 后才能登录；两个密钥都必须是至少 32 个字符的独立随机值，不能使用示例、邀请码或用户侧会话密钥。生产环境缺少任一项时，客服登录会拒绝请求。
+
+可使用 Node.js 生成密钥：
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+客服登录接口会按来源地址限制连续失败次数。多实例部署时，应将该限流接入共享存储或边缘限流服务。没有 `DATABASE_URL` 时，客服工作台使用进程内演示存储；配置 PostgreSQL 并执行表结构后，邀请码才会持久化。
 
 后续接入 iFinD MCP 时，Key 只能放在服务端环境变量中，不能放到浏览器端：
 

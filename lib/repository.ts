@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import { getInviteCode } from "@/lib/auth";
 
 export type InviteRecord = {
   code: string;
@@ -11,6 +12,13 @@ export type InviteRecord = {
 };
 
 export type RedeemResult = { ok: true; userId: string } | { ok: false; reason: "invalid" | "expired" | "revoked" | "exhausted" | "database-not-configured" };
+
+const demoInvites: InviteRecord[] = [];
+
+function ensureDemoInvite() {
+  const code = getInviteCode();
+  if (code && !demoInvites.some((invite) => invite.code === code)) demoInvites.push({ code, maxUses: 0, usedCount: 0, expiresAt: null, revokedAt: null, createdAt: new Date().toISOString(), status: "有效" });
+}
 
 function inviteStatus(invite: { used_count: number; max_uses: number; expires_at: Date | null; revoked_at: Date | null }): InviteRecord["status"] {
   if (invite.revoked_at) return "已撤销";
@@ -54,6 +62,33 @@ export async function listInviteCodes(): Promise<InviteRecord[]> {
   if (!db) return [];
   const result = await db.query<{ code: string; max_uses: number; used_count: number; expires_at: Date | null; revoked_at: Date | null; created_at: Date }>("SELECT code, max_uses, used_count, expires_at, revoked_at, created_at FROM invite_codes ORDER BY created_at DESC");
   return result.rows.map((invite) => ({ code: invite.code, maxUses: invite.max_uses, usedCount: invite.used_count, expiresAt: invite.expires_at?.toISOString() ?? null, revokedAt: invite.revoked_at?.toISOString() ?? null, createdAt: invite.created_at.toISOString(), status: inviteStatus(invite) }));
+}
+
+export function listDemoInvites() {
+  ensureDemoInvite();
+  return [...demoInvites];
+}
+
+export function createDemoInvite(maxUses = 1, expiresInDays = 7) {
+  const now = new Date();
+  const invite: InviteRecord = { code: `MC-${crypto.randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`, maxUses, usedCount: 0, expiresAt: new Date(now.getTime() + expiresInDays * 86400000).toISOString(), revokedAt: null, createdAt: now.toISOString(), status: "有效" };
+  demoInvites.unshift(invite);
+  return invite;
+}
+
+export async function revokeInvite(code: string) {
+  const db = getDb();
+  if (!db) return false;
+  const result = await db.query("UPDATE invite_codes SET revoked_at = NOW() WHERE code = $1 AND revoked_at IS NULL", [code]);
+  return result.rowCount === 1;
+}
+
+export function revokeDemoInvite(code: string) {
+  const invite = demoInvites.find((item) => item.code === code);
+  if (!invite) return false;
+  invite.revokedAt = new Date().toISOString();
+  invite.status = "已撤销";
+  return true;
 }
 
 export async function createInvite(maxUses = 1, expiresInDays = 7) {

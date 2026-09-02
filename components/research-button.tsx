@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ResearchProgress from "@/components/research-progress";
 
 type Report = {
   conclusion: string;
@@ -41,6 +42,7 @@ export default function ResearchButton({ code }: { code: string }) {
         <span>↗</span>
       </button>
       {error && <p className="form-error">{error}</p>}
+      {loading && <div className="inline-progress"><ResearchProgress compact /></div>}
       {report && (
         <div className="inline-report">
           <div className="report-head"><span className="eyebrow">MUCHEN RESEARCH NOTE</span><span className="confidence">置信度 {report.confidence}</span></div>

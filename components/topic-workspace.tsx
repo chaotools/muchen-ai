@@ -44,7 +44,7 @@ function TopicEvents({ events, compact = false }: { events: Array<TopicEvent & {
 
 function TopicDetailPanel({ topic, saved, onToggleSaved }: { topic: Topic; saved: boolean; onToggleSaved: () => void }) {
   return (
-    <section className="topic-detail-card">
+    <section className="topic-detail-card topic-detail-enter">
       <div className="topic-detail-head">
         <div>
           <span className="eyebrow">SELECTED TOPIC</span>
@@ -116,7 +116,7 @@ export default function TopicWorkspace({ topics }: TopicWorkspaceProps) {
       .sort((a, b) => b[sortBy] - a[sortBy]);
   }, [topics, query, sortBy, trend]);
 
-  const selectedTopic = topics.find((topic) => topic.id === selectedId) ?? visibleTopics[0] ?? topics[0];
+  const selectedTopic = visibleTopics.find((topic) => topic.id === selectedId) ?? visibleTopics[0] ?? topics[0];
   const events = useMemo(() => topics.flatMap((topic) => topic.events.map((event) => ({ ...event, topicId: topic.id, topicName: topic.name }))).sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)), [topics]);
   const selectedSaved = selectedTopic ? savedIds.includes(selectedTopic.id) : false;
 
@@ -156,7 +156,7 @@ export default function TopicWorkspace({ topics }: TopicWorkspaceProps) {
           <div className="topic-card-heading"><div><span className="eyebrow">TOPIC RANKING</span><h2>题材排行榜</h2></div><span className="live-tag">今日</span></div>
           <div className="topic-rank-list">
             <div className="topic-rank-head"><span>题材</span><span>热度</span><span>涨幅</span><span>领涨股</span></div>
-            {visibleTopics.map((topic, index) => <button type="button" className={`topic-rank-row ${selectedTopic?.id === topic.id ? "selected" : ""}`} key={topic.id} onClick={() => setSelectedId(topic.id)}><span className="topic-rank-name"><b>{String(index + 1).padStart(2, "0")}</b><span><strong>{topic.name}</strong><small>{topic.category} · {topic.continuationDays} 日</small></span></span><span className="topic-heat"><i style={{ width: `${topic.heat}%` }} /><strong>{topic.heat}</strong></span><span className={topic.changePercent >= 0 ? "positive" : "negative"}>{formatPercent(topic.changePercent)}</span><span className="topic-leader-name">{topic.leader.name}</span></button>)}
+            {visibleTopics.map((topic, index) => <button type="button" aria-pressed={selectedTopic?.id === topic.id} className={`topic-rank-row ${selectedTopic?.id === topic.id ? "selected" : ""}`} key={topic.id} onClick={() => setSelectedId(topic.id)}><span className="topic-rank-name"><b>{String(index + 1).padStart(2, "0")}</b><span><strong>{topic.name}</strong><small>{topic.category} · {topic.continuationDays} 日</small></span></span><span className="topic-heat"><i style={{ width: `${topic.heat}%` }} /><strong>{topic.heat}</strong></span><span className={topic.changePercent >= 0 ? "positive" : "negative"}>{formatPercent(topic.changePercent)}</span><span className="topic-leader-name">{topic.leader.name}</span></button>)}
             {!visibleTopics.length && <div className="topic-empty">没有匹配的题材</div>}
           </div>
         </section>
@@ -164,7 +164,7 @@ export default function TopicWorkspace({ topics }: TopicWorkspaceProps) {
           <div className="topic-card-heading"><div><span className="eyebrow">SIGNAL STREAM</span><h2>题材动态</h2></div><button type="button" className="topic-plain-button" onClick={() => setView("events")}>全部动态 →</button></div>
           <TopicEvents events={events.slice(0, 5)} compact />
         </section>
-        {selectedTopic && <TopicDetailPanel topic={selectedTopic} saved={selectedSaved} onToggleSaved={() => toggleSaved(selectedTopic.id)} />}
+        {selectedTopic && <TopicDetailPanel key={selectedTopic.id} topic={selectedTopic} saved={selectedSaved} onToggleSaved={() => toggleSaved(selectedTopic.id)} />}
       </div>}
 
       {view === "rotation" && <section className="topic-rotation-card">

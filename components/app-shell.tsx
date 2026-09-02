@@ -7,6 +7,7 @@ import LogoutButton from "@/components/logout-button";
 
 const navItems = [
   { href: "/", label: "市场驾驶舱", icon: "◈" },
+  { href: "/topics", label: "题材研究", icon: "✦" },
   { href: "/watchlist", label: "AI 自选", icon: "☆" },
   { href: "/portfolio", label: "模拟持仓", icon: "▣" },
   { href: "/analysis", label: "研究报告", icon: "⌁" },
@@ -16,6 +17,11 @@ const navItems = [
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const sectionTitle = pathname === "/"
+    ? "市场驾驶舱"
+    : pathname.startsWith("/topics")
+      ? "题材研究"
+      : "研究工作区";
 
   return (
     <div className="app-shell">
@@ -59,7 +65,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       <main className="main-content">
         <header className="topbar">
-          <div className="breadcrumbs"><span>沐尘实验室</span><i>/</i><strong>{pathname === "/" ? "市场驾驶舱" : "研究工作区"}</strong></div>
+          <div className="breadcrumbs"><span>沐尘实验室</span><i>/</i><strong>{sectionTitle}</strong></div>
           <div className="top-actions">
             <StockSearch />
             <span className="status-pill"><span className="status-dot" />演示模式</span>

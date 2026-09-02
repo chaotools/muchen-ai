@@ -8,6 +8,7 @@ type Report = {
   confidence: string;
   positives: string[];
   risks: string[];
+  dataStatus?: string;
   asOf: string;
 };
 
@@ -51,7 +52,7 @@ export default function ResearchButton({ code }: { code: string }) {
             <div><span className="report-label positive-text">支持因素</span>{report.positives.map((item) => <p key={item}>＋ {item}</p>)}</div>
             <div><span className="report-label negative-text">风险边界</span>{report.risks.map((item) => <p key={item}>－ {item}</p>)}</div>
           </div>
-          <small className="muted">数据时间：{report.asOf} · 当前为演示数据，接入 iFinD MCP 后替换为真实证据。</small>
+          <small className="muted">数据时间：{report.asOf} · 数据来源：{report.dataStatus ?? "演示数据"}。</small>
         </div>
       )}
     </div>

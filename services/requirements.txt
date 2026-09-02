@@ -1,0 +1,5 @@
+adata==2.9.5
+baostock==0.9.3
+fastapi>=0.115,<1
+requests>=2.31,<3
+uvicorn[standard]>=0.30,<1

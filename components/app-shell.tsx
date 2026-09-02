@@ -15,8 +15,10 @@ const navItems = [
   { href: "/admin", label: "控制中心", icon: "⚙" }
 ];
 
-export default function AppShell({ children }: { children: React.ReactNode }) {
+export default function AppShell({ children, dataMode = "demo" }: { children: React.ReactNode; dataMode?: "demo" | "free-data" | "ifind-mcp" }) {
   const pathname = usePathname();
+  const dataLabel = dataMode === "free-data" ? "本地免费数据" : dataMode === "ifind-mcp" ? "iFinD MCP" : "演示模式";
+  const workspaceLabel = dataMode === "demo" ? "演示工作区" : "真实数据工作区";
   const sectionTitle = pathname === "/"
     ? "市场驾驶舱"
     : pathname.startsWith("/topics")
@@ -57,7 +59,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="user-chip">
             <span className="avatar">M</span>
-            <span><strong>研究员</strong><small>演示工作区</small></span>
+            <span><strong>研究员</strong><small>{workspaceLabel}</small></span>
             <LogoutButton />
           </div>
         </div>
@@ -68,7 +70,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="breadcrumbs"><span>沐尘实验室</span><i>/</i><strong>{sectionTitle}</strong></div>
           <div className="top-actions">
             <StockSearch />
-            <span className="status-pill"><span className="status-dot" />演示模式</span>
+            <span className="status-pill"><span className="status-dot" />{dataLabel}</span>
             <Link href="/login" className="login-link">登录 / 邀请</Link>
           </div>
         </header>

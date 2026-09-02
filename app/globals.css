@@ -230,5 +230,15 @@ button { cursor:pointer; }
 @keyframes surface-in { from { opacity:0; transform:translateY(7px); } to { opacity:1; transform:translateY(0); } }
 @keyframes topic-detail-in { from { opacity:0; transform:translateY(10px) scale(.992); } to { opacity:1; transform:translateY(0) scale(1); } }
 @keyframes research-pulse { 50% { box-shadow:0 0 0 7px rgba(84,230,193,0); } }
+
+/* A 股约定：上涨用红色，下跌用绿色。正负行情类名统一覆盖桌面端和移动端。 */
+:root { --up: #fa7381; --down: #54e6c1; }
+.positive { color: var(--up); }
+.negative { color: var(--down); }
+.pulse-bars b { background: var(--up); }
+.pulse-bars .bar-negative { background: var(--down) !important; }
+.provider-check .positive, .invite-manager .positive, .health-list .positive { color: var(--cyan); }
+.watch-card .mini-chart path[stroke="#54e6c1"] { stroke: var(--up) !important; }
+.watch-card .mini-chart path[stroke="#fa7381"] { stroke: var(--down) !important; }
 @media (max-width:700px) { .research-progress-steps { grid-template-columns:1fr; }.inline-progress { position:static; width:auto; margin-top:12px; }.interactive-chart { padding-left:37px; }.chart-tooltip { top:7px; }.chart-legend { gap:10px; line-height:1.7; } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; } }

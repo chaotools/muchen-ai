@@ -1,8 +1,9 @@
-import { indexQuotes, latestNews, watchlistQuotes, getProviderInfo } from "@/lib/market";
+import { getMarketSnapshot } from "@/lib/market";
 
 export async function GET() {
+  const { indexQuotes, latestNews, watchlistQuotes, provider } = await getMarketSnapshot();
   return Response.json({
-    provider: getProviderInfo(),
+    provider,
     updatedAt: new Date().toISOString(),
     indices: indexQuotes,
     watchlist: watchlistQuotes,

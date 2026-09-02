@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { Topic, TopicEvent, TopicTrend } from "@/lib/topics";
 
-type TopicWorkspaceProps = { topics: Topic[] };
+type TopicWorkspaceProps = { topics: Topic[]; dataMode?: "demo" | "free-data"; dataNote?: string };
 type TopicSort = "heat" | "changePercent" | "limitUpCount" | "continuationDays";
 type TopicView = "overview" | "rotation" | "events";
 
@@ -43,6 +43,7 @@ function TopicEvents({ events, compact = false }: { events: Array<TopicEvent & {
 }
 
 function TopicDetailPanel({ topic, saved, onToggleSaved }: { topic: Topic; saved: boolean; onToggleSaved: () => void }) {
+  const isSample = topic.dataStatus === "free-data";
   return (
     <section className="topic-detail-card topic-detail-enter">
       <div className="topic-detail-head">
@@ -56,7 +57,7 @@ function TopicDetailPanel({ topic, saved, onToggleSaved }: { topic: Topic; saved
       <div className="topic-kpi-grid">
         <div><span>综合热度</span><strong className="topic-heat-value">{topic.heat}</strong></div>
         <div><span>当日涨幅</span><strong className={topic.changePercent >= 0 ? "positive" : "negative"}>{formatPercent(topic.changePercent)}</strong></div>
-        <div><span>涨停数量</span><strong>{topic.limitUpCount}<small> 家</small></strong></div>
+        <div><span>{isSample ? "样本涨停" : "涨停数量"}</span><strong>{topic.limitUpCount}<small> 家</small></strong></div>
         <div><span>持续</span><strong>{topic.continuationDays}<small> 日</small></strong></div>
       </div>
       <div className="topic-strength-block">
@@ -72,9 +73,9 @@ function TopicDetailPanel({ topic, saved, onToggleSaved }: { topic: Topic; saved
         </div>
       </div>
       <div className="topic-leader-block">
-        <div className="topic-subheading"><span>当前领涨股</span><small>题材内贡献最高</small></div>
+        <div className="topic-subheading"><span>{isSample ? "当前样本领涨股" : "当前领涨股"}</span><small>{isSample ? "按当日涨跌幅排序" : "题材内贡献最高"}</small></div>
         <Link className="topic-leader-row" href={`/stocks/${topic.leader.code}`}>
-          <span className="topic-leader-rank">01</span><span className="stock-cell"><strong>{topic.leader.name}</strong><small>{topic.leader.code} · {topic.leader.status}</small></span><strong className="positive">{formatPercent(topic.leader.changePercent)}</strong><span>→</span>
+          <span className="topic-leader-rank">01</span><span className="stock-cell"><strong>{topic.leader.name}</strong><small>{topic.leader.code} · {topic.leader.status}</small></span><strong className={topic.leader.changePercent >= 0 ? "positive" : "negative"}>{formatPercent(topic.leader.changePercent)}</strong><span>→</span>
         </Link>
       </div>
       <div className="topic-card-footer"><span>更新于 {topicLatestLabel(topic)}</span><Link href={`/topics/${topic.id}`} className="text-link">查看完整详情 →</Link></div>
@@ -86,7 +87,7 @@ function topicLatestLabel(topic: Topic) {
   return topic.history[topic.history.length - 1]?.date ?? "今日";
 }
 
-export default function TopicWorkspace({ topics }: TopicWorkspaceProps) {
+export default function TopicWorkspace({ topics, dataMode = "demo", dataNote }: TopicWorkspaceProps) {
   const [view, setView] = useState<TopicView>("overview");
   const [sortBy, setSortBy] = useState<TopicSort>("heat");
   const [trend, setTrend] = useState<TopicTrend | "全部">("全部");
@@ -130,7 +131,7 @@ export default function TopicWorkspace({ topics }: TopicWorkspaceProps) {
     <>
       <section className="hero-row topic-hero-row">
         <div><span className="eyebrow">TOPIC INTELLIGENCE · 01 SEP 2026</span><h1>题材研究</h1><p className="hero-subtitle">从市场热度、事件催化和股票联动，识别正在形成的题材主线。</p></div>
-        <div className="hero-actions"><span className="data-note"><span className="status-dot" />演示数据 · 可替换 Provider</span></div>
+        <div className="hero-actions"><span className="data-note"><span className="status-dot" />{dataNote ?? (dataMode === "free-data" ? "本地免费数据 · 同花顺题材 + BaoStock 行情" : "演示数据 · 可替换 Provider")}</span></div>
       </section>
 
       <section className="topic-overview-grid">

@@ -1,8 +1,9 @@
 node_modules/
+.venv-free-data/
+__pycache__/
 .next/
 out/
 .env*
 !.env.example
 tsconfig.tsbuildinfo
 npm-debug.log*
-

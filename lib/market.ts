@@ -1,4 +1,5 @@
 import { IfindMcpClient } from "@/lib/ifind-mcp";
+import { fetchFreeHistory, fetchFreeQuotes, fetchFreeStockConcepts, isFreeDataEnabled } from "@/lib/free-data";
 
 export type Quote = {
   code: string;
@@ -29,6 +30,8 @@ export type StockDetail = Quote & {
   thesis: string;
   risks: string[];
   news: NewsItem[];
+  history?: Array<{ date: string; close: number; changePercent: number }>;
+  dataProvider?: ProviderInfo;
 };
 
 export const indexQuotes: Quote[] = [
@@ -78,12 +81,96 @@ export function searchStocks(query: string): Quote[] {
   }).slice(0, 8);
 }
 
+export async function searchStocksAsync(query: string): Promise<{ results: Quote[]; provider: ProviderInfo }> {
+  if (!query.trim()) return { results: [], provider: getProviderInfo() };
+  if (!isFreeDataEnabled()) return { results: searchStocks(query), provider: getProviderInfo() };
+  const snapshot = await getMarketSnapshot();
+  const keyword = query.trim().toLowerCase();
+  const allQuotes = [...snapshot.watchlistQuotes, ...snapshot.screenerUniverse];
+  const seen = new Set<string>();
+  const results = allQuotes.filter((quote) => {
+    const matched = quote.code.toLowerCase().includes(keyword) || quote.name.toLowerCase().includes(keyword) || quote.signal?.toLowerCase().includes(keyword);
+    if (!matched || seen.has(quote.code)) return false;
+    seen.add(quote.code);
+    return true;
+  }).slice(0, 8);
+  return { results, provider: snapshot.provider };
+}
+
 export const latestNews: NewsItem[] = [
   { time: "10:42", source: "市场雷达", title: "科技成长方向成交额继续抬升，半导体板块活跃度居前", tone: "positive" },
   { time: "10:18", source: "公告精选", title: "多家公司披露回购进展，风险偏好出现边际改善", tone: "positive" },
   { time: "09:56", source: "宏观观察", title: "今日北向资金脉冲流入，指数维持震荡上行结构", tone: "neutral" },
   { time: "09:31", source: "风险提示", title: "部分高位题材股波动放大，追涨需关注量价背离", tone: "negative" }
 ];
+
+export type MarketSnapshot = {
+  indexQuotes: Quote[];
+  watchlistQuotes: Quote[];
+  screenerUniverse: ScreenerQuote[];
+  latestNews: NewsItem[];
+  provider: ProviderInfo;
+};
+
+function numberValue(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function volumeLabel(amount: number) {
+  if (amount >= 100_000_000) return `${(amount / 100_000_000).toFixed(1)}亿`;
+  if (amount >= 10_000) return `${(amount / 10_000).toFixed(1)}万`;
+  return `${Math.round(amount)}`;
+}
+
+function liveQuote(base: Quote, live: { price: number; change: number; change_percent: number; amount: number }) {
+  return {
+    ...base,
+    price: live.price,
+    change: live.change,
+    changePercent: live.change_percent,
+    volume: volumeLabel(live.amount)
+  };
+}
+
+export async function getMarketSnapshot(): Promise<MarketSnapshot> {
+  if (!isFreeDataEnabled()) return { indexQuotes, watchlistQuotes, screenerUniverse, latestNews, provider: getProviderInfo() };
+
+  const baseQuotes = [...indexQuotes, ...watchlistQuotes, ...screenerUniverse];
+  const codes = [...new Set(baseQuotes.map((quote) => quote.code))];
+  try {
+    const quotePayload = await fetchFreeQuotes(codes);
+    const liveQuotes = quotePayload.items;
+    if (!liveQuotes.length) return demoMarketSnapshot("本地数据服务未返回行情，已回退演示数据");
+    const liveByCode = new Map(liveQuotes.map((quote) => [quote.code, quote]));
+    const updateQuote = (quote: Quote) => {
+      const live = liveByCode.get(quote.code);
+      return live ? liveQuote(quote, live) : quote;
+    };
+    const updateScreener = (quote: ScreenerQuote): ScreenerQuote => {
+      const updated = updateQuote(quote);
+      const momentum: ScreenerQuote["momentum"] = updated.changePercent >= 3 ? "强" : updated.changePercent <= -1 ? "弱" : "中";
+      return { ...quote, ...updated, momentum };
+    };
+    const asOf = liveQuotes.map((quote) => quote.as_of).filter(Boolean).sort().at(-1) ?? "最新交易日";
+    const quoteSource = quotePayload.provider.startsWith("tencent-finance") ? "腾讯财经公开行情" : "BaoStock";
+    return {
+      indexQuotes: indexQuotes.map(updateQuote),
+      watchlistQuotes: watchlistQuotes.map(updateQuote),
+      screenerUniverse: screenerUniverse.map(updateScreener),
+      provider: {
+        ...getProviderInfo(),
+        note: `${quoteSource} 最新交易日行情 · 已更新 ${liveQuotes.length} / ${codes.length} 个样本${liveQuotes.length < codes.length ? "，其余保留演示值" : ""}`
+      },
+      latestNews: [
+        { time: asOf, source: quoteSource, title: `本地免费数据网关已更新 ${liveQuotes.length} 个最新交易日样本`, tone: "positive" },
+        { time: "题材", source: "同花顺公开页面", title: "题材成分与股票联动数据已通过本地服务加载", tone: "neutral" }
+      ]
+    };
+  } catch {
+    return demoMarketSnapshot("本地数据服务未响应，已回退演示数据");
+  }
+}
 
 const detailMap: Record<string, StockDetail> = {
   "600519.SH": {
@@ -145,18 +232,96 @@ export function getStockDetail(code: string): StockDetail {
   };
 }
 
+function marketForCode(code: string): Quote["market"] {
+  if (code.includes(".SH") || code.startsWith("60") || code.startsWith("68")) return "沪";
+  if (code.startsWith("30")) return "创";
+  return "深";
+}
+
+function metric(value: unknown, suffix = "x") {
+  const parsed = numberValue(value);
+  return parsed ? `${parsed.toFixed(2)}${suffix}` : "—";
+}
+
+export async function getStockDetailAsync(code: string): Promise<StockDetail> {
+  if (!isFreeDataEnabled()) return { ...getStockDetail(code), dataProvider: getProviderInfo() };
+  try {
+    const [historyPayload, conceptPayload] = await Promise.all([
+      fetchFreeHistory(code),
+      fetchFreeStockConcepts(code).catch(() => ({ items: [] }))
+    ]);
+    const history = historyPayload.items;
+    const historySource = historyPayload.provider.startsWith("tencent-finance") ? "腾讯财经公开行情" : "BaoStock";
+    const latest = history.at(-1);
+    if (!latest) return { ...getStockDetail(code), dataProvider: getDemoFallbackProviderInfo("本地数据服务未返回历史行情，已回退演示数据") };
+    const previous = history.at(-2) ?? latest;
+    const price = numberValue(latest.close);
+    const previousPrice = numberValue(latest.preclose) || numberValue(previous.close);
+    const change = price - previousPrice;
+    const changePercent = numberValue(latest.pctChg) || (previousPrice ? change / previousPrice * 100 : 0);
+    const yearHistory = history.slice(-260).map((row) => numberValue(row.close)).filter(Boolean);
+    const industry = conceptPayload.items[0]?.name ?? "A 股";
+    const name = watchlistQuotes.find((quote) => quote.code === code)?.name ?? code;
+    const signal = changePercent >= 3 ? "强势放量" : changePercent >= 0 ? "趋势观察" : "回撤观察";
+    return {
+      code,
+      name,
+      price,
+      change,
+      changePercent,
+      volume: volumeLabel(numberValue(latest.amount)),
+      market: marketForCode(code),
+      signal,
+      industry,
+      marketCap: "—",
+      pe: metric(latest.peTTM),
+      pb: metric(latest.pbMRQ),
+      roe: "—",
+      high52: Math.max(...yearHistory, price),
+      low52: Math.min(...yearHistory, price),
+      thesis: `最新交易日 ${latest.date} 收盘 ${price.toFixed(2)}，涨跌幅 ${changePercent.toFixed(2)}%。当前页面使用${historySource}历史行情与同花顺公开题材信息生成基础观察。`,
+      risks: ["免费公开数据可能存在延迟或缺失", "仅有行情与题材标签，尚未接入完整财务和公告原文", "短线涨跌不代表趋势已经确认"],
+      news: [{ time: latest.date, source: `${historySource} / 同花顺公开页面`, title: `${industry}题材与行情数据已更新`, tone: "neutral" }],
+      history: history.map((row) => ({ date: row.date, close: numberValue(row.close), changePercent: numberValue(row.pctChg) })),
+      dataProvider: { ...getProviderInfo(), note: `${historySource} 历史行情 + 同花顺公开题材` }
+    };
+  } catch {
+    return { ...getStockDetail(code), dataProvider: getDemoFallbackProviderInfo("本地数据服务未响应，已回退演示数据") };
+  }
+}
+
 export type ProviderInfo = {
-  mode: "demo" | "ifind-mcp";
+  mode: "demo" | "free-data" | "ifind-mcp";
   label: string;
   configured: boolean;
   note: string;
 };
 
+function getDemoFallbackProviderInfo(note: string): ProviderInfo {
+  return { mode: "demo", label: "演示数据", configured: false, note };
+}
+
+function demoMarketSnapshot(note: string): MarketSnapshot {
+  return {
+    indexQuotes,
+    watchlistQuotes,
+    screenerUniverse,
+    latestNews,
+    provider: getDemoFallbackProviderInfo(note)
+  };
+}
+
 export function getProviderInfo(): ProviderInfo {
   const configured = Boolean(process.env.IFIND_MCP_URL && process.env.IFIND_MCP_AUTH_KEY);
-  const mode = process.env.MUCHEN_DATA_MODE === "ifind-mcp" && configured ? "ifind-mcp" : "demo";
+  const mode = process.env.MUCHEN_DATA_MODE === "ifind-mcp" && configured
+    ? "ifind-mcp"
+    : process.env.MUCHEN_DATA_MODE === "free-data"
+      ? "free-data"
+      : "demo";
   return mode === "ifind-mcp"
     ? { mode, label: "iFinD MCP", configured: true, note: "服务端 MCP 数据通道已配置" }
+    : mode === "free-data"
+      ? { mode, label: "本地免费数据", configured: true, note: "腾讯行情主源 / BaoStock 兜底 / 同花顺公开题材已接入" }
     : { mode, label: "演示数据", configured, note: configured ? "iFinD 已配置，当前仍使用演示模式" : "配置 iFinD MCP 后可切换真实数据" };
 }
 

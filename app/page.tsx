@@ -1,6 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/app-shell";
 import { indexQuotes, latestNews, watchlistQuotes, getProviderInfo } from "@/lib/market";
+import { topicUniverse } from "@/lib/topics";
 
 function formatPercent(value: number) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
@@ -36,6 +37,8 @@ export default function DashboardPage() {
             <div className="briefing-list"><div><span className="briefing-index">01</span><span>关注半导体放量后的回踩确认，不把单日脉冲当成趋势。</span></div><div><span className="briefing-index">02</span><span>消费龙头出现趋势修复，估值与需求兑现仍需同步观察。</span></div><div><span className="briefing-index">03</span><span>模拟账户保持中性仓位，等待更清晰的风险收益比。</span></div></div>
           </div>
         </section>
+
+        <section className="section-block topic-home-preview"><div className="section-heading"><div><span className="eyebrow">TOPIC INTELLIGENCE</span><h2>今日题材主线</h2></div><Link href="/topics" className="secondary-button">进入题材研究 <span>→</span></Link></div><div className="topic-home-grid">{topicUniverse.slice(0, 4).map((topic, index) => <Link href={`/topics/${topic.id}`} className="topic-home-card" key={topic.id}><div className="topic-home-card-head"><span className={`topic-trend topic-trend-${topic.trend}`}>{topic.trend}</span><span className="topic-home-rank">NO.{String(index + 1).padStart(2, "0")}</span></div><strong className="topic-home-name">{topic.name}</strong><small>{topic.category} · {topic.continuationDays} 日持续</small><div className="topic-home-metrics"><b>{topic.heat}<small> 热度</small></b><span className={topic.changePercent >= 0 ? "positive" : "negative"}>{formatPercent(topic.changePercent)}</span><span>{topic.limitUpCount} 板</span></div><div className="topic-home-progress"><i><b style={{ width: `${topic.heat}%` }} /></i></div></Link>)}</div></section>
 
         <section className="section-block"><div className="section-heading"><div><span className="eyebrow">MY WATCHLIST</span><h2>自选股观察</h2></div><Link href="/watchlist" className="secondary-button">管理自选 <span>→</span></Link></div><div className="quote-table"><div className="quote-row quote-head"><span>标的</span><span>最新价</span><span>涨跌幅</span><span>AI 观察</span><span /></div>{watchlistQuotes.map((quote) => <Link className="quote-row" href={`/stocks/${quote.code}`} key={quote.code}><span className="stock-cell"><strong>{quote.name}</strong><small>{quote.code}</small></span><strong>¥{quote.price.toFixed(2)}</strong><span className={quote.changePercent >= 0 ? "positive" : "negative"}>{formatPercent(quote.changePercent)}</span><span className="signal-pill">{quote.signal}</span><span className="row-arrow">→</span></Link>)}</div></section>
 

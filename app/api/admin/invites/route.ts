@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getSessionFromRequest, isAdminEmail } from "@/lib/auth";
+import { requireUser, apiError } from "@/lib/access";
 import { getInviteCode } from "@/lib/auth";
 import { isDatabaseConfigured } from "@/lib/db";
 import { createInvite, listInviteCodes } from "@/lib/repository";
@@ -8,10 +8,8 @@ import { NextResponse } from "next/server";
 const inviteSchema = z.object({ maxUses: z.number().int().min(1).max(1000).default(1), expiresInDays: z.number().int().min(1).max(365).default(7) });
 
 async function authorize(request: Request) {
-  const session = await getSessionFromRequest(request);
-  if (!session) return { response: NextResponse.json({ error: "请先登录沐尘" }, { status: 401 }) };
-  if (!isAdminEmail(session.email)) return { response: NextResponse.json({ error: "当前账号没有邀请码管理权限" }, { status: 403 }) };
-  return { session };
+  try { return { session: await requireUser(request, true) }; }
+  catch (error) { return { response: apiError(error) }; }
 }
 
 export async function GET(request: Request) {

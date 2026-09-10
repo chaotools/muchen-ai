@@ -22,13 +22,13 @@ const demoRanges: Record<ChartRange, ChartSeries> = {
     changes: [-0.62, -0.34, 0.18, -0.08, 0.44, 0.73, 1.12]
   },
   daily: {
-    label: "日K",
+    label: "日收盘线（模拟）",
     simulated: true,
     timestamps: ["08-24", "08-25", "08-26", "08-27", "08-28", "08-31", "09-01"],
     changes: [-3.84, -2.15, -2.91, -0.72, -1.36, 0.41, 1.12]
   },
   weekly: {
-    label: "周K",
+    label: "周收盘线（模拟）",
     simulated: true,
     timestamps: ["7月第1周", "7月第2周", "8月第1周", "8月第2周", "8月第3周", "8月第4周", "本周"],
     changes: [-8.92, -6.3, -4.18, -5.06, -1.98, -0.44, 1.12]
@@ -39,10 +39,13 @@ function buildRealRanges(history: StockChartProps["history"]): Record<ChartRange
   const valid = (history ?? []).filter((point) => Number.isFinite(point.close) && point.close > 0);
   if (valid.length < 2) return null;
   const daily = valid.slice(-7);
-  const weekly: typeof valid = [];
-  for (let index = Math.max(0, valid.length - 30); index < valid.length; index += 5) {
-    weekly.push(valid[Math.min(index + 4, valid.length - 1)]);
+  const weeks = new Map<string, (typeof valid)[number]>();
+  for (const point of valid.slice(-45)) {
+    const date = new Date(point.date + "T00:00:00Z");
+    date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
+    weeks.set(date.toISOString().slice(0, 10), point);
   }
+  const weekly = [...weeks.values()].slice(-7);
   const makeSeries = (label: string, points: typeof valid): ChartSeries => ({
     label,
     timestamps: points.map((point) => point.date),
@@ -51,8 +54,8 @@ function buildRealRanges(history: StockChartProps["history"]): Record<ChartRange
   });
   return {
     intraday: demoRanges.intraday,
-    daily: makeSeries("日K", daily),
-    weekly: makeSeries("周K", weekly)
+    daily: makeSeries("日收盘线 · 前复权", daily),
+    weekly: makeSeries("周收盘线 · 前复权", weekly)
   };
 }
 
@@ -61,7 +64,7 @@ function formatPrice(value: number) {
 }
 
 export default function StockChart({ code, price, high52, low52, history }: StockChartProps) {
-  const [range, setRange] = useState<ChartRange>("intraday");
+  const [range, setRange] = useState<ChartRange>("daily");
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const ranges = buildRealRanges(history) ?? demoRanges;
   const series = ranges[range];
@@ -76,7 +79,7 @@ export default function StockChart({ code, price, high52, low52, history }: Stoc
   const top = 16;
   const bottom = 208;
   const span = max - min;
-  const xFor = (index: number) => left + (index / (points.length - 1)) * (right - left);
+  const xFor = (index: number) => left + (index / Math.max(1, points.length - 1)) * (right - left);
   const yFor = (value: number) => top + ((max - value) / span) * (bottom - top);
   const line = points.map((value, index) => `${index === 0 ? "M" : "L"}${xFor(index).toFixed(2)} ${yFor(value).toFixed(2)}`).join(" ");
   const area = `${line} L${xFor(points.length - 1).toFixed(2)} ${bottom} L${xFor(0).toFixed(2)} ${bottom} Z`;
@@ -117,7 +120,7 @@ export default function StockChart({ code, price, high52, low52, history }: Stoc
         </div>
         <div className="chart-x">{series.timestamps.map((timestamp) => <span key={timestamp}>{timestamp}</span>)}</div>
       </div>
-      <div className="chart-legend"><span><i className="legend-line" />{series.label}{series.simulated ? "" : "真实走势"}</span><span>52 周高 ¥{high52.toFixed(2)}</span><span>52 周低 ¥{low52.toFixed(2)}</span></div>
+      <div className="chart-legend"><span><i className="legend-line" />{series.label}{series.simulated ? "" : "真实走势"}</span><span>近一年高（前复权）¥{high52.toFixed(2)}</span><span>近一年低（前复权）¥{low52.toFixed(2)}</span></div>
       <p className="sr-only" aria-live="polite">{series.label}，{series.timestamps[selectedIndex]}，价格 {formatPrice(selectedValue)}，变化 {selectedChange.toFixed(2)}%</p>
     </>
   );

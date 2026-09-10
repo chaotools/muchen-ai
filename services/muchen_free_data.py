@@ -120,7 +120,7 @@ def _fetch_tencent_quotes(stock_codes: list[str]) -> dict[str, dict[str, Any]]:
     for matched in re.finditer(r'v_([a-z]{2}\d+)="([^"]*)";', content):
         symbol, raw = matched.groups()
         fields = raw.split("~")
-        if len(fields) < 33:
+        if len(fields) < 38:
             continue
         price = _number(fields[3])
         if price <= 0:
@@ -132,6 +132,7 @@ def _fetch_tencent_quotes(stock_codes: list[str]) -> dict[str, dict[str, Any]]:
         display_code = f"{code}.{market.upper()}"
         quotes[display_code] = {
             "code": display_code,
+            "name": fields[1],
             "as_of": as_of,
             "price": price,
             "change": _number(fields[31]),
@@ -146,18 +147,24 @@ def _query_tencent_history(stock_code: str, start_date: str, end_date: str) -> l
     symbol = _tencent_symbol(stock_code)
     start = date.fromisoformat(start_date)
     end = date.fromisoformat(end_date)
-    points = max(60, min(1_000, (end - start).days * 2))
+    if start > end:
+        raise ValueError("开始日期不能晚于结束日期")
+    points = max(60, min(1_000, (date.today() - start).days * 2 + 10))
     payload = _tencent_get(
         f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,,,{points},qfq"
     ).json()
     series = payload.get("data", {}).get(symbol, {}).get("qfqday", [])
     display_code = _display_stock_code(_normalise_stock_code(stock_code))
     rows: list[dict[str, Any]] = []
-    for point in series:
-        if len(point) < 6 or point[0] < start_date or point[0] > end_date:
+    previous_close = 0.0
+    for point in sorted(series, key=lambda item: item[0]):
+        if len(point) < 6:
             continue
         close = _number(point[2])
-        previous_close = _number(rows[-1]["close"]) if rows else close
+        preclose = previous_close or close
+        previous_close = close
+        if point[0] < start_date or point[0] > end_date:
+            continue
         rows.append({
             "date": point[0],
             "code": _normalise_stock_code(stock_code),
@@ -165,13 +172,13 @@ def _query_tencent_history(stock_code: str, start_date: str, end_date: str) -> l
             "high": point[3],
             "low": point[4],
             "close": point[2],
-            "preclose": f"{previous_close:.4f}",
+            "preclose": f"{preclose:.4f}",
             "volume": point[5],
             "amount": "0",
-            "adjustflag": "qfq",
+            "adjustflag": "2",
             "turn": "",
             "tradestatus": "1",
-            "pctChg": f"{((close / previous_close - 1) * 100) if previous_close else 0:.4f}",
+            "pctChg": f"{((close / preclose - 1) * 100) if preclose else 0:.4f}",
             "peTTM": "",
             "pbMRQ": "",
             "psTTM": "",
@@ -181,12 +188,7 @@ def _query_tencent_history(stock_code: str, start_date: str, end_date: str) -> l
         })
     if not rows:
         raise ValueError("腾讯历史行情未返回可用数据")
-    latest = _fetch_tencent_quotes([stock_code]).get(display_code)
-    if latest:
-        rows[-1]["close"] = f"{latest['price']:.4f}"
-        rows[-1]["preclose"] = f"{latest['price'] - latest['change']:.4f}"
-        rows[-1]["amount"] = f"{latest['amount']:.4f}"
-        rows[-1]["pctChg"] = f"{latest['change_percent']:.4f}"
+    # 历史 OHLC 保持同一日期和复权口径；最新未复权报价不能覆盖历史。
     return rows
 
 
@@ -217,6 +219,13 @@ def _query_history_with_provider(
     adjustflag: str,
 ) -> tuple[list[dict[str, Any]], str]:
     code = _normalise_stock_code(stock_code)
+    if adjustflag not in {"1", "2", "3"}:
+        raise HTTPException(status_code=400, detail="adjustflag 仅支持 1/2/3")
+    try:
+        if date.fromisoformat(start_date) > date.fromisoformat(end_date):
+            raise ValueError("开始日期不能晚于结束日期")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="日期格式或日期范围不正确") from exc
     if frequency in {"d", "w", "m"}:
         fields = "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST"
     elif frequency in {"5", "15", "30", "60"}:
@@ -226,7 +235,7 @@ def _query_history_with_provider(
 
     # 腾讯接口可提供不依赖登录会话的日线，作为默认路径；BaoStock 仅在它
     # 暂时不可用或请求非日线时兜底，避免单一上游网络波动让前端退回演示数据。
-    if frequency == "d":
+    if frequency == "d" and adjustflag == "2":
         try:
             return _query_tencent_history(stock_code, start_date, end_date), "tencent-finance"
         except (requests.RequestException, ValueError, KeyError, TypeError):
@@ -283,7 +292,7 @@ def _latest_quote(
                     start_date or (date.today() - timedelta(days=45)).isoformat(),
                     date.today().isoformat(),
                     "d",
-                    "3",
+                    "2",
                 )
             return quote
     except (requests.RequestException, ValueError, KeyError, TypeError):
@@ -333,6 +342,15 @@ def _topic_trend(change_percent: float, up_ratio: float) -> str:
     if change_percent < -0.8 and up_ratio < 0.45:
         return "退潮"
     return "分歧"
+
+
+def _consecutive_positive_days(history: list[dict[str, Any]]) -> int:
+    count = 0
+    for point in reversed(history):
+        if point["change_percent"] <= 0:
+            break
+        count += 1
+    return count
 
 
 def _build_topic_snapshot(definition: dict[str, str]) -> dict[str, Any]:
@@ -385,8 +403,8 @@ def _build_topic_snapshot(definition: dict[str, str]) -> dict[str, Any]:
     for member in sample_members:
         if member["rank"] == 1:
             member["status"] = "龙头"
-        elif member["change_percent"] >= 9.5:
-            member["status"] = "连板"
+        elif member["change_percent"] >= 5:
+            member["status"] = "强势"
 
     dates = sorted({row["date"] for quote in quotes_by_code.values() for row in quote.get("history", [])})[-6:]
     history: list[dict[str, Any]] = []
@@ -426,7 +444,7 @@ def _build_topic_snapshot(definition: dict[str, str]) -> dict[str, Any]:
         "flat_count": flat_count,
         "limit_up_count": sum(change >= 9.5 for change in changes),
         "limit_up_30_count": len(recent_limit_up_codes),
-        "continuation_days": sum(point["change_percent"] > 0 for point in history),
+        "continuation_days": _consecutive_positive_days(history),
         "turnover": _format_amount(sum(quotes_by_code[member["code"]]["amount"] for member in sample_members)),
         "rank_times": 0,
         "trend": _topic_trend(average_change, up_ratio),
@@ -504,10 +522,19 @@ def quotes(codes: str = Query(min_length=3)) -> dict[str, Any]:
 
 
 def _build_topics_payload() -> dict[str, Any]:
+    items, errors = [], []
+    for definition in _topic_definitions:
+        try:
+            item = _build_topic_snapshot(definition)
+            if item.get("members"):
+                items.append(item)
+        except Exception:
+            errors.append(definition["id"])
     return {
         "provider": "adata-ths+tencent-finance",
         "updated_at": date.today().isoformat(),
-        "items": [_build_topic_snapshot(definition) for definition in _topic_definitions],
+        "items": items,
+        "errors": errors,
     }
 
 
@@ -516,7 +543,8 @@ def _refresh_topics_cache() -> None:
     try:
         payload = _build_topics_payload()
         with _topics_cache_lock:
-            _topics_cache = (time.time(), payload)
+            if payload["items"]:
+                _topics_cache = (time.time(), payload)
     finally:
         with _topics_cache_lock:
             _topics_refreshing = False
@@ -534,7 +562,7 @@ def topics() -> dict[str, Any]:
         if not _topics_refreshing:
             _topics_refreshing = True
             threading.Thread(target=_refresh_topics_cache, daemon=True).start()
-        if cached:
+        if cached and now - cached[0] < 60 * 60:
             return {**cached[1], "refreshing": True, "stale": True}
     return {
         "provider": "adata-ths+tencent-finance",
@@ -550,7 +578,7 @@ def stock_history(
     start_date: str = Query(default_factory=lambda: (date.today() - timedelta(days=365)).isoformat()),
     end_date: str = Query(default_factory=lambda: date.today().isoformat()),
     frequency: str = "d",
-    adjustflag: str = "3",
+    adjustflag: str = "2",
 ) -> dict[str, Any]:
     items, provider = _query_history_with_provider(stock_code, start_date, end_date, frequency, adjustflag)
     return {

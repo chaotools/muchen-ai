@@ -8,6 +8,6 @@ export function isDatabaseConfigured() {
 
 export function getDb() {
   if (!process.env.DATABASE_URL) return null;
-  if (!globalForDb.muchenPool) globalForDb.muchenPool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5 });
+  if (!globalForDb.muchenPool) globalForDb.muchenPool = new Pool({ connectionString: process.env.DATABASE_URL, max: 5, connectionTimeoutMillis: 5_000, statement_timeout: 10_000 });
   return globalForDb.muchenPool;
 }

@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import type { Quote } from "@/lib/market";
+import { useRouter } from "next/navigation";
 import ResearchProgress from "@/components/research-progress";
 
 type Report = {
@@ -12,12 +13,13 @@ type Report = {
   asOf: string;
 };
 
-export default function ResearchWorkspace({ stocks, providerLabel = "演示数据" }: { stocks: Quote[]; providerLabel?: string }) {
-  const [code, setCode] = useState(stocks[0]?.code ?? "688981.SH");
+export default function ResearchWorkspace({ stocks, providerLabel = "演示数据", initialCode }: { stocks: Quote[]; providerLabel?: string; initialCode?: string }) {
+  const [code, setCode] = useState(stocks.some((stock) => stock.code === initialCode) ? initialCode! : stocks[0]?.code ?? "");
   const [question, setQuestion] = useState("结合近期行情和公告，未来一周最需要验证什么？");
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const router = useRouter();
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -32,6 +34,7 @@ export default function ResearchWorkspace({ stocks, providerLabel = "演示数�
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "研究任务启动失败");
       setReport(payload.report);
+      router.refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "研究任务启动失败");
     } finally {
@@ -54,19 +57,19 @@ export default function ResearchWorkspace({ stocks, providerLabel = "演示数�
         <label>你想研究什么？<textarea value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={240} rows={4} placeholder="例如：估值是否已经反映增长？近期有哪些风险需要验证？" /></label>
         <div className="research-form-foot">
           <span className="muted">{question.length} / 240 · {providerLabel}</span>
-          <button className="primary-button" type="submit" disabled={loading || !question.trim()}>{loading ? "正在整理证据…" : report ? "重新生成研究" : "生成研究笔记"}<span>↗</span></button>
+          <button className="primary-button" type="submit" disabled={loading || !question.trim() || !code}>{loading ? "正在整理证据…" : report ? "重新生成研究" : "生成研究笔记"}<span>↗</span></button>
         </div>
         {error && <p className="form-error">{error}</p>}
       </form>
       {loading && <ResearchProgress />}
       {report && <div className="workspace-report">
-        <div className="report-head"><span className="eyebrow">LATEST RESEARCH NOTE</span><span className="confidence">置信度 {report.confidence}</span></div>
+        <div className="report-head"><span className="eyebrow">LATEST RESEARCH NOTE</span><span className="confidence">模板笔记 · 置信度{report.confidence}</span></div>
         <p className="report-conclusion">{report.conclusion}</p>
         <div className="report-columns">
           <div><span className="report-label positive-text">支持因素</span>{report.positives.map((item) => <p key={item}>＋ {item}</p>)}</div>
           <div><span className="report-label negative-text">风险边界</span>{report.risks.map((item) => <p key={item}>－ {item}</p>)}</div>
         </div>
-        <small className="muted">生成时间：{report.asOf} · 后续可关联行情、财务、公告原文。</small>
+        <small className="muted">数据时间：{report.asOf} · 已保存到研究库。问题作为待验证假设，模板尚未回答该问题。</small>
       </div>}
     </section>
   );

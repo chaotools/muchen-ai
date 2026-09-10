@@ -56,10 +56,10 @@ export class IfindMcpClient {
     if (id !== undefined) body.id = id;
     if (params !== undefined) body.params = params;
 
-    let response = await fetch(this.url, { method: "POST", headers: this.headers(), body: JSON.stringify(body), cache: "no-store" });
+    let response = await fetch(this.url, { method: "POST", headers: this.headers(), body: JSON.stringify(body), cache: "no-store", signal: AbortSignal.timeout(10_000) });
     if (response.status === 401 && this.authMode === "raw") {
       this.authMode = "bearer";
-      response = await fetch(this.url, { method: "POST", headers: this.headers(), body: JSON.stringify(body), cache: "no-store" });
+      response = await fetch(this.url, { method: "POST", headers: this.headers(), body: JSON.stringify(body), cache: "no-store", signal: AbortSignal.timeout(10_000) });
     }
     if (!response.ok && response.status !== 202) {
       const message = await response.text().catch(() => "");

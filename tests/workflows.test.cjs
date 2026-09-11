@@ -67,6 +67,19 @@ test("authenticated workflows and isolation", async (t) => {
     for (let i = 0; i < 5; i++) assert.equal(await email.consumeEmailCode("attempts@example.test", wrong), false);
     assert.equal(await email.consumeEmailCode("attempts@example.test", code), false);
   });
+  await t.test("concurrent OTP verification succeeds only once", async () => {
+    await email.requestEmailCode("parallel@example.test");
+    const code = delivered.get("parallel@example.test");
+    assert.deepEqual((await Promise.all([email.consumeEmailCode("parallel@example.test", code), email.consumeEmailCode("parallel@example.test", code)])).sort(), [false, true]);
+  });
+  await t.test("mail delivery failure invalidates the generated code", async () => {
+    const mailFetch = global.fetch;
+    global.fetch = async (...args) => { await mailFetch(...args); return new Response(null, {status: 500}); };
+    try {
+      await assert.rejects(email.requestEmailCode("failed@example.test"), error => error.status === 503);
+      assert.equal(await email.consumeEmailCode("failed@example.test", delivered.get("failed@example.test")), false);
+    } finally { global.fetch = mailFetch; }
+  });
   async function logIn(emailAddress) {
     await email.requestEmailCode(emailAddress);
     const response = await login.POST(request("/api/auth/login", { email: emailAddress, inviteCode: process.env.MUCHEN_INVITE_CODE, emailCode: delivered.get(emailAddress) }));
@@ -77,6 +90,14 @@ test("authenticated workflows and isolation", async (t) => {
   const token2 = await logIn("other@example.test");
   const uid = (await auth.verifySession(token)).userId;
   const uid2 = (await auth.verifySession(token2)).userId;
+  await t.test("tampered and expired sessions cannot read personal data", async () => {
+    const expired = await auth.createSignedSession("member@example.test", process.env.MUCHEN_SESSION_SECRET, -1, uid);
+    const tampered = token.split(".")[0] + ".invalid-signature";
+    for (const invalid of [expired, tampered]) {
+      assert.equal((await watchlist.GET(request("/api/watchlist", null, invalid))).status, 401);
+      assert.equal((await research.GET(request("/api/research", null, invalid))).status, 401);
+    }
+  });
   await t.test("member cannot access admin provider and verified administrator can", async () => {
     assert.equal((await admin.POST(request("/api/admin/provider", {}, token))).status, 403);
     const adminToken = await logIn("admin@example.test");
@@ -111,6 +132,12 @@ test("authenticated workflows and isolation", async (t) => {
     assert.equal((await store.getPaperAccount(uid2)).orders.length, 0);
     const altered = await orders.POST(request("/api/paper/orders", { ...body, shares: 200 }, token));
     assert.equal(altered.status, 409);
+    process.env.MUCHEN_DATA_MODE = "free-data";
+    try {
+      // The test fetch rejects all quote requests, but a completed replay must still work.
+      assert.equal((await orders.POST(request("/api/paper/orders", body, token))).status, 200);
+      assert.deepEqual(await store.getPaperAccount(uid), account);
+    } finally { process.env.MUCHEN_DATA_MODE = "demo"; }
   });
   await t.test("overselling and insufficient funds leave the account unchanged", async () => {
     const before = await store.getPaperAccount(uid);

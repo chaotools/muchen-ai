@@ -35,8 +35,8 @@ const demoRanges: Record<ChartRange, ChartSeries> = {
   }
 };
 
-function buildRealRanges(history: StockChartProps["history"]): Record<ChartRange, ChartSeries> | null {
-  const valid = (history ?? []).filter((point) => Number.isFinite(point.close) && point.close > 0);
+function buildRealRanges(history: StockChartProps["history"]): Partial<Record<ChartRange, ChartSeries>> | null {
+  const valid = (history ?? []).filter((point) => Number.isFinite(point.close) && point.close > 0 && Number.isFinite(Date.parse(point.date)));
   if (valid.length < 2) return null;
   const daily = valid.slice(-7);
   const weeks = new Map<string, (typeof valid)[number]>();
@@ -53,7 +53,6 @@ function buildRealRanges(history: StockChartProps["history"]): Record<ChartRange
     changes: points.map((point, index) => index === 0 ? point.changePercent : (point.close / points[index - 1].close - 1) * 100)
   });
   return {
-    intraday: demoRanges.intraday,
     daily: makeSeries("日收盘线 · 前复权", daily),
     weekly: makeSeries("周收盘线 · 前复权", weekly)
   };
@@ -66,8 +65,10 @@ function formatPrice(value: number) {
 export default function StockChart({ code, price, high52, low52, history }: StockChartProps) {
   const [range, setRange] = useState<ChartRange>("daily");
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const ranges = buildRealRanges(history) ?? demoRanges;
-  const series = ranges[range];
+  const realRanges = buildRealRanges(history);
+  if (history !== undefined && !realRanges) return <p className="muted" role="status">历史行情不足，暂无法绘制走势。</p>;
+  const ranges = realRanges ?? demoRanges;
+  const series = ranges[range] ?? ranges.daily!;
   const points = series.values ?? series.changes.map((change) => price * (1 + change / 100));
   const rawMin = Math.min(...points);
   const rawMax = Math.max(...points);
@@ -83,7 +84,7 @@ export default function StockChart({ code, price, high52, low52, history }: Stoc
   const yFor = (value: number) => top + ((max - value) / span) * (bottom - top);
   const line = points.map((value, index) => `${index === 0 ? "M" : "L"}${xFor(index).toFixed(2)} ${yFor(value).toFixed(2)}`).join(" ");
   const area = `${line} L${xFor(points.length - 1).toFixed(2)} ${bottom} L${xFor(0).toFixed(2)} ${bottom} Z`;
-  const selectedIndex = hoverIndex ?? points.length - 1;
+  const selectedIndex = Math.min(hoverIndex ?? points.length - 1, points.length - 1);
   const selectedValue = points[selectedIndex];
   const selectedChange = series.changes[selectedIndex];
 
@@ -98,7 +99,7 @@ export default function StockChart({ code, price, high52, low52, history }: Stoc
       <div className="chart-tabs" role="tablist" aria-label="行情周期">
         {(Object.keys(ranges) as ChartRange[]).map((key) => (
           <button type="button" role="tab" aria-selected={range === key} className={range === key ? "active" : ""} key={key} onClick={() => { setRange(key); setHoverIndex(null); }}>
-            {ranges[key].label}
+            {ranges[key]!.label}
           </button>
         ))}
       </div>
@@ -112,7 +113,7 @@ export default function StockChart({ code, price, high52, low52, history }: Stoc
             {[top, top + (bottom - top) / 3, top + ((bottom - top) * 2) / 3, bottom].map((y) => <line className="chart-grid-line" key={y} x1={left} x2={right} y1={y} y2={y} />)}
             <path d={area} fill={`url(#chart-fill-${code.replace(/\W/g, "")})`} />
             <path d={line} className="chart-line" />
-            {hoverIndex !== null && <g className="chart-hover"><line x1={xFor(hoverIndex)} x2={xFor(hoverIndex)} y1={top} y2={bottom} /><circle cx={xFor(hoverIndex)} cy={yFor(points[hoverIndex])} r="5" /></g>}
+            {hoverIndex !== null && <g className="chart-hover"><line x1={xFor(selectedIndex)} x2={xFor(selectedIndex)} y1={top} y2={bottom} /><circle cx={xFor(selectedIndex)} cy={yFor(points[selectedIndex])} r="5" /></g>}
           </svg>
           <div className="chart-tooltip" style={{ left: `${(xFor(selectedIndex) / 760) * 100}%` }}>
             <span>{series.timestamps[selectedIndex]}</span><strong>¥{formatPrice(selectedValue)}</strong><small className={selectedChange >= 0 ? "positive" : "negative"}>{selectedChange >= 0 ? "+" : ""}{selectedChange.toFixed(2)}%</small>
@@ -120,7 +121,7 @@ export default function StockChart({ code, price, high52, low52, history }: Stoc
         </div>
         <div className="chart-x">{series.timestamps.map((timestamp) => <span key={timestamp}>{timestamp}</span>)}</div>
       </div>
-      <div className="chart-legend"><span><i className="legend-line" />{series.label}{series.simulated ? "" : "真实走势"}</span><span>近一年高（前复权）¥{high52.toFixed(2)}</span><span>近一年低（前复权）¥{low52.toFixed(2)}</span></div>
+      <div className="chart-legend"><span><i className="legend-line" />{series.label}</span><span>{realRanges ? "历史样本高（前复权）" : "演示高点"}¥{high52.toFixed(2)}</span><span>{realRanges ? "历史样本低（前复权）" : "演示低点"}¥{low52.toFixed(2)}</span></div>
       <p className="sr-only" aria-live="polite">{series.label}，{series.timestamps[selectedIndex]}，价格 {formatPrice(selectedValue)}，变化 {selectedChange.toFixed(2)}%</p>
     </>
   );

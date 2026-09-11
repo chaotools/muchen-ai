@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       risks: [...stock.risks, "本笔记由行情模板整理，未调用 AI 模型，不回答财务、公告或预测类问题"],
       dataStatus: source, asOf, generatedAt: new Date().toISOString(), method: "行情模板 · 未调用 AI",
       evidence: [
-        { label: "价格", value: stock.price.toFixed(2), source, asOf },
+        { label: stock.priceLabel ?? "演示价格", value: stock.price.toFixed(2), source, asOf },
         { label: "涨跌幅", value: stock.changePercent.toFixed(2) + "%", source, asOf }
       ]
     };

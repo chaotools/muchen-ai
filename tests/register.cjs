@@ -7,7 +7,7 @@ const resolve = Module._resolveFilename;
 Module._resolveFilename = function (name, parent, ...rest) {
   return resolve.call(this, name.startsWith("@/") ? path.join(root, name.slice(2)) : name, parent, ...rest);
 };
-require.extensions[".ts"] = function (module, filename) {
+require.extensions[".ts"] = require.extensions[".tsx"] = function (module, filename) {
   const source = fs.readFileSync(filename, "utf8");
-  module._compile(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText, filename);
+  module._compile(ts.transpileModule(source, { fileName: filename, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText, filename);
 };

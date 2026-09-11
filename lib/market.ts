@@ -23,6 +23,7 @@ export type NewsItem = {
 };
 
 export type StockDetail = Quote & {
+  priceLabel?: string;
   industry: string;
   marketCap: string;
   pe: string;
@@ -256,22 +257,22 @@ export async function getStockDetailAsync(code: string): Promise<StockDetail> {
   if (!isFreeDataEnabled()) return { ...getStockDetail(code), dataProvider: getProviderInfo(), asOf: "演示样本" };
   try {
     const [historyPayload, conceptPayload, quotesPayload] = await Promise.all([
-      fetchFreeHistory(code),
+      fetchFreeHistory(code).catch(() => ({ provider: "", items: [] })),
       fetchFreeStockConcepts(code).catch(() => ({ items: [] })),
       fetchFreeQuotes([code]).catch(() => ({ items: [] }))
     ]);
-    const history = historyPayload.items;
+    const history = historyPayload.items.filter((row) => numberValue(row.close) > 0 && Number.isFinite(Date.parse(row.date))).sort((a, b) => a.date.localeCompare(b.date));
     const historySource = historyPayload.provider.startsWith("tencent-finance") ? "腾讯财经公开行情" : "BaoStock";
     const latest = history.at(-1);
-    if (!latest) return unavailableStock(code);
+    const quote = quotesPayload.items.find((item) => item.code === code && Number.isFinite(item.price) && item.price > 0 && Number.isFinite(item.change) && Number.isFinite(item.change_percent));
+    if (!latest && !quote) return unavailableStock(code);
     const previous = history.at(-2) ?? latest;
-    const price = numberValue(latest.close);
-    const previousPrice = numberValue(latest.preclose) || numberValue(previous.close);
+    const price = numberValue(latest?.close);
+    const previousPrice = numberValue(latest?.preclose) || numberValue(previous?.close);
     const change = price - previousPrice;
-    const changePercent = numberValue(latest.pctChg) || (previousPrice ? change / previousPrice * 100 : 0);
+    const changePercent = numberValue(latest?.pctChg) || (previousPrice ? change / previousPrice * 100 : 0);
     const yearHighs = history.slice(-260).map((row) => numberValue(row.high)).filter(Boolean);
     const yearLows = history.slice(-260).map((row) => numberValue(row.low)).filter(Boolean);
-    const quote = quotesPayload.items.find((item) => item.code === code && item.price > 0);
     const industry = conceptPayload.items[0]?.name ?? "A 股";
     const name = quote?.name ?? screenerUniverse.find((quote) => quote.code === code)?.name ?? code;
     const signal = changePercent >= 3 ? "当日涨幅较大" : changePercent >= 0 ? "趋势观察" : "回撤观察";
@@ -279,25 +280,26 @@ export async function getStockDetailAsync(code: string): Promise<StockDetail> {
       code,
       name,
       price: quote?.price ?? price,
+      priceLabel: quote ? "最新价（未复权）" : "历史收盘价（前复权）",
       change: quote?.change ?? change,
       changePercent: quote?.change_percent ?? changePercent,
-      asOf: quote?.as_of ?? latest.date,
+      asOf: quote?.as_of ?? latest?.date,
       availability: "live",
       volume: quote?.amount ? volumeLabel(quote.amount) : "—",
       market: marketForCode(code),
       signal,
       industry,
       marketCap: "—",
-      pe: metric(latest.peTTM),
-      pb: metric(latest.pbMRQ),
+      pe: metric(latest?.peTTM),
+      pb: metric(latest?.pbMRQ),
       roe: "—",
       high52: Math.max(...yearHighs, price),
       low52: Math.min(...yearLows, price),
-      thesis: `${latest.date} 前复权收盘价 ${price.toFixed(2)}，涨跌幅 ${changePercent.toFixed(2)}%。由${historySource}历史行情整理；尚未进行模型分析。`,
+      thesis: latest ? `${latest.date} 前复权收盘价 ${price.toFixed(2)}，涨跌幅 ${changePercent.toFixed(2)}%。由${historySource}历史行情整理；尚未进行模型分析。` : "当前仅有最新报价，历史行情暂不可用；尚未进行模型分析。",
       risks: ["免费公开数据可能存在延迟或缺失", "仅有行情与题材标签，尚未接入完整财务和公告原文", "短线涨跌不代表趋势已经确认"],
-      news: [{ time: latest.date, source: `${historySource} / 同花顺公开页面`, title: `${industry}题材与行情数据已更新`, tone: "neutral" }],
+      news: latest ? [{ time: latest.date, source: historySource, title: "历史行情已更新；题材标签按可用数据展示", tone: "neutral" }] : [],
       history: history.map((row) => ({ date: row.date, close: numberValue(row.close), changePercent: numberValue(row.pctChg) })),
-      dataProvider: { ...getProviderInfo(), note: `${historySource} · 历史图为前复权口径；${quote ? "最新价为未复权报价" : "最新报价暂缺，显示历史前复权收盘价"}` }
+      dataProvider: { ...getProviderInfo(), note: `${latest ? historySource + " · 历史图为前复权口径" : "历史行情暂不可用"}；${quote ? "最新价为未复权报价" : "最新报价暂缺，显示历史前复权收盘价"}` }
     };
   } catch {
     return unavailableStock(code);
@@ -357,6 +359,7 @@ export async function getExecutionQuote(code: string): Promise<{ price: number; 
     const quote = payload.items.find((item) => item.code === code);
     if (!quote || !Number.isFinite(quote.price) || quote.price <= 0 || !Number.isFinite(Date.parse(quote.as_of))) throw new AppError("缺少有效报价，无法模拟成交", 503);
     if (Date.now() - Date.parse(quote.as_of) > 7 * 86_400_000) throw new AppError("报价已超过 7 天，无法模拟成交", 503);
+    if (Date.parse(quote.as_of) > Date.now() + 5 * 60_000) throw new AppError("报价时间异常，无法模拟成交", 503);
     return { price: Math.round(quote.price * 100) / 100, source: payload.provider, asOf: quote.as_of };
   }
   const quote = screenerUniverse.find((item) => item.code === code);

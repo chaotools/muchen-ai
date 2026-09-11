@@ -140,12 +140,12 @@ export async function fetchFreeTopics(): Promise<Topic[]> {
   const payload = await fetchFreeJson<{ items: FreeTopic[]; refreshing?: boolean; stale?: boolean }>("/api/topics");
   if (payload.stale) throw new Error("题材缓存已过期，正在刷新");
   if (!payload.items.length) throw new Error(payload.refreshing ? "题材数据正在后台更新" : "题材数据暂不可用");
-  return payload.items.map((item) => {
+  return payload.items.flatMap((item) => {
     const template = topicUniverse.find((topic) => topic.id === item.id);
     const members = item.members.map(toTopicStock);
-    const leader = members[0] ?? template?.leader;
-    if (!template || !leader) throw new Error(`免费题材数据缺少模板：${item.id}`);
-    return {
+    const leader = members[0];
+    if (!template || !leader) return [];
+    return [{
       ...template,
       name: item.name,
       description: `同花顺公开题材「${item.name}」：取前 ${members.length} 只成分股作为样本，不代表整个板块。热度为规则计算；大涨样本指涨幅 ≥9.5%，不等同于涨停。`,
@@ -170,9 +170,9 @@ export async function fetchFreeTopics(): Promise<Topic[]> {
       })),
       events: [],
       relations: [],
-      dataStatus: "free-data",
+      dataStatus: "free-data" as const,
       asOf: item.updated_at
-    };
+    }];
   });
 }
 

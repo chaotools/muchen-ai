@@ -39,14 +39,14 @@ export default function ResearchButton({ code }: { code: string }) {
   return (
     <div className="research-action">
       <button className="primary-button" onClick={runResearch} disabled={loading}>
-        {loading ? "正在整理证据…" : report ? "重新生成 AI 研判" : "生成 AI 研判"}
+        {loading ? "正在整理证据…" : report ? "重新保存行情笔记" : "保存行情笔记"}
         <span>↗</span>
       </button>
       {error && <p className="form-error">{error}</p>}
       {loading && <div className="inline-progress"><ResearchProgress compact /></div>}
       {report && (
         <div className="inline-report">
-          <div className="report-head"><span className="eyebrow">MUCHEN RESEARCH NOTE</span><span className="confidence">置信度 {report.confidence}</span></div>
+          <div className="report-head"><span className="eyebrow">MUCHEN RESEARCH NOTE</span><span className="confidence">模板笔记 · 置信度{report.confidence}</span></div>
           <p className="report-conclusion">{report.conclusion}</p>
           <div className="report-columns">
             <div><span className="report-label positive-text">支持因素</span>{report.positives.map((item) => <p key={item}>＋ {item}</p>)}</div>

@@ -57,7 +57,7 @@ function TopicDetailPanel({ topic, saved, onToggleSaved }: { topic: Topic; saved
       <div className="topic-kpi-grid">
         <div><span>综合热度</span><strong className="topic-heat-value">{topic.heat}</strong></div>
         <div><span>当日涨幅</span><strong className={topic.changePercent >= 0 ? "positive" : "negative"}>{formatPercent(topic.changePercent)}</strong></div>
-        <div><span>{isSample ? "样本涨停" : "涨停数量"}</span><strong>{topic.limitUpCount}<small> 家</small></strong></div>
+        <div><span>{isSample ? "大涨样本" : "涨停数量"}</span><strong>{topic.limitUpCount}<small> 家</small></strong></div>
         <div><span>持续</span><strong>{topic.continuationDays}<small> 日</small></strong></div>
       </div>
       <div className="topic-strength-block">
@@ -130,7 +130,7 @@ export default function TopicWorkspace({ topics, dataMode = "demo", dataNote }: 
   return (
     <>
       <section className="hero-row topic-hero-row">
-        <div><span className="eyebrow">TOPIC INTELLIGENCE · 01 SEP 2026</span><h1>题材研究</h1><p className="hero-subtitle">从市场热度、事件催化和股票联动，识别正在形成的题材主线。</p></div>
+        <div><span className="eyebrow">TOPIC INTELLIGENCE · {dataMode === "demo" ? "演示样本" : "最新可用样本"}</span><h1>题材研究</h1><p className="hero-subtitle">从市场热度、事件催化和股票联动，识别正在形成的题材主线。</p></div>
         <div className="hero-actions"><span className="data-note"><span className="status-dot" />{dataNote ?? (dataMode === "free-data" ? "本地免费数据 · 同花顺题材 + BaoStock 行情" : "演示数据 · 可替换 Provider")}</span></div>
       </section>
 
@@ -138,7 +138,7 @@ export default function TopicWorkspace({ topics, dataMode = "demo", dataNote }: 
         <div className="topic-overview-card"><span>活跃题材</span><strong>{overview.activeCount}</strong><small>热度 ≥ 70</small></div>
         <div className="topic-overview-card topic-overview-accent"><span>主线候选</span><strong>{overview.mainlineCount}</strong><small>强化状态</small></div>
         <div className="topic-overview-card"><span>新启动</span><strong>{overview.newCount}</strong><small>等待持续性确认</small></div>
-        <div className="topic-overview-card"><span>题材涨停</span><strong>{overview.limitUpCount}</strong><small>今日样本合计</small></div>
+        <div className="topic-overview-card"><span>题材大涨样本</span><strong>{overview.limitUpCount}</strong><small>今日样本合计</small></div>
       </section>
 
       <section className="topic-toolbar">
@@ -169,8 +169,8 @@ export default function TopicWorkspace({ topics, dataMode = "demo", dataNote }: 
       </div>}
 
       {view === "rotation" && <section className="topic-rotation-card">
-        <div className="topic-card-heading"><div><span className="eyebrow">TOPIC ROTATION</span><h2>题材轮动矩阵</h2></div><span className="muted">按热度与涨停数量观察强弱切换</span></div>
-        <div className="topic-rotation-table"><div className="topic-rotation-row topic-rotation-head"><span>题材</span>{topics[0]?.history.map((point) => <span key={point.date}>{point.date}</span>)}</div>{visibleTopics.map((topic) => <div className="topic-rotation-row" key={topic.id}><strong>{topic.name}</strong>{topic.history.map((point) => <button type="button" key={point.date} onClick={() => { setSelectedId(topic.id); setView("overview"); }} className={point.heat >= 80 ? "hot" : point.heat >= 65 ? "warm" : "cool"}><b>{point.heat}</b><small>{point.limitUpCount}板</small></button>)}</div>)}</div>
+        <div className="topic-card-heading"><div><span className="eyebrow">TOPIC ROTATION</span><h2>题材轮动矩阵</h2></div><span className="muted">按样本热度与大涨数量观察变化</span></div>
+        <div className="topic-rotation-table"><div className="topic-rotation-row topic-rotation-head"><span>题材</span>{topics[0]?.history.map((point) => <span key={point.date}>{point.date}</span>)}</div>{visibleTopics.map((topic) => <div className="topic-rotation-row" key={topic.id}><strong>{topic.name}</strong>{topic.history.map((point) => <button type="button" key={point.date} onClick={() => { setSelectedId(topic.id); setView("overview"); }} className={point.heat >= 80 ? "hot" : point.heat >= 65 ? "warm" : "cool"}><b>{point.heat}</b><small>{point.limitUpCount}{dataMode === "free-data" ? "大涨" : "板（演示）"}</small></button>)}</div>)}</div>
       </section>}
 
       {view === "events" && <section className="topic-event-card topic-event-card-full"><div className="topic-card-heading"><div><span className="eyebrow">TOPIC EVENTS</span><h2>题材动态时间线</h2></div><span className="muted">新题材 / 新事件 / 公告 / 资金</span></div><TopicEvents events={events} /></section>}

@@ -1,4 +1,5 @@
 import { IfindMcpClient } from "@/lib/ifind-mcp";
+import { AppError } from "@/lib/access";
 import { fetchFreeHistory, fetchFreeQuotes, fetchFreeStockConcepts, isFreeDataEnabled } from "@/lib/free-data";
 
 export type Quote = {
@@ -10,6 +11,8 @@ export type Quote = {
   volume: string;
   market: "沪" | "深" | "创";
   signal?: string;
+  asOf?: string;
+  availability?: "live" | "demo" | "missing";
 };
 
 export type NewsItem = {
@@ -20,6 +23,7 @@ export type NewsItem = {
 };
 
 export type StockDetail = Quote & {
+  priceLabel?: string;
   industry: string;
   marketCap: string;
   pe: string;
@@ -49,10 +53,10 @@ export const watchlistQuotes: Quote[] = [
 
 export type ScreenerQuote = Quote & {
   industry: string;
-  score: number;
+  score: number | null;
   momentum: "强" | "中" | "弱";
-  valuation: "低估" | "合理" | "偏高";
-  risk: "低" | "中" | "高";
+  valuation: "低估" | "合理" | "偏高" | "未评估";
+  risk: "低" | "中" | "高" | "未评估";
 };
 
 export const screenerUniverse: ScreenerQuote[] = [
@@ -123,13 +127,17 @@ function volumeLabel(amount: number) {
   return `${Math.round(amount)}`;
 }
 
-function liveQuote(base: Quote, live: { price: number; change: number; change_percent: number; amount: number }) {
+function liveQuote(base: Quote, live: { price: number; change: number; change_percent: number; amount: number; as_of: string; name?: string }): Quote {
   return {
     ...base,
+    name: live.name ?? base.name,
     price: live.price,
     change: live.change,
     changePercent: live.change_percent,
-    volume: volumeLabel(live.amount)
+    volume: live.amount ? volumeLabel(live.amount) : "—",
+    signal: live.change_percent >= 3 ? "当日涨幅较大" : live.change_percent >= 0 ? "上涨样本" : "下跌样本",
+    asOf: live.as_of,
+    availability: "live"
   };
 }
 
@@ -140,8 +148,8 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
   const codes = [...new Set(baseQuotes.map((quote) => quote.code))];
   try {
     const quotePayload = await fetchFreeQuotes(codes);
-    const liveQuotes = quotePayload.items;
-    if (!liveQuotes.length) return demoMarketSnapshot("本地数据服务未返回行情，已回退演示数据");
+    const liveQuotes = quotePayload.items.filter((item) => Number.isFinite(item.price) && item.price > 0 && Number.isFinite(item.change_percent));
+    if (!liveQuotes.length) return unavailableMarketSnapshot("行情暂不可用，请稍后刷新");
     const liveByCode = new Map(liveQuotes.map((quote) => [quote.code, quote]));
     const updateQuote = (quote: Quote) => {
       const live = liveByCode.get(quote.code);
@@ -150,25 +158,25 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
     const updateScreener = (quote: ScreenerQuote): ScreenerQuote => {
       const updated = updateQuote(quote);
       const momentum: ScreenerQuote["momentum"] = updated.changePercent >= 3 ? "强" : updated.changePercent <= -1 ? "弱" : "中";
-      return { ...quote, ...updated, momentum };
+      return { ...quote, ...updated, momentum, score: null, valuation: "未评估", risk: "未评估" };
     };
     const asOf = liveQuotes.map((quote) => quote.as_of).filter(Boolean).sort().at(-1) ?? "最新交易日";
     const quoteSource = quotePayload.provider.startsWith("tencent-finance") ? "腾讯财经公开行情" : "BaoStock";
     return {
-      indexQuotes: indexQuotes.map(updateQuote),
-      watchlistQuotes: watchlistQuotes.map(updateQuote),
-      screenerUniverse: screenerUniverse.map(updateScreener),
+      indexQuotes: indexQuotes.filter((quote) => liveByCode.has(quote.code)).map(updateQuote),
+      watchlistQuotes: watchlistQuotes.filter((quote) => liveByCode.has(quote.code)).map(updateQuote),
+      screenerUniverse: screenerUniverse.filter((quote) => liveByCode.has(quote.code)).map(updateScreener),
       provider: {
         ...getProviderInfo(),
-        note: `${quoteSource} 最新交易日行情 · 已更新 ${liveQuotes.length} / ${codes.length} 个样本${liveQuotes.length < codes.length ? "，其余保留演示值" : ""}`
+        note: `${quoteSource} 最新交易日行情 · 已更新 ${liveQuotes.length} / ${codes.length} 个样本；缺失标的不展示价格，评分未评估`
       },
       latestNews: [
         { time: asOf, source: quoteSource, title: `本地免费数据网关已更新 ${liveQuotes.length} 个最新交易日样本`, tone: "positive" },
-        { time: "题材", source: "同花顺公开页面", title: "题材成分与股票联动数据已通过本地服务加载", tone: "neutral" }
+        { time: "说明", source: "数据范围", title: "当前为有限样本行情，完整财务和公告尚未接入", tone: "neutral" }
       ]
     };
   } catch {
-    return demoMarketSnapshot("本地数据服务未响应，已回退演示数据");
+    return unavailableMarketSnapshot("本地行情服务暂不可用，请稍后刷新");
   }
 }
 
@@ -215,10 +223,12 @@ const detailMap: Record<string, StockDetail> = {
 };
 
 export function getStockDetail(code: string): StockDetail {
+  const base = screenerUniverse.find((stock) => stock.code === code);
   return detailMap[code] ?? {
-    ...watchlistQuotes[3],
+    ...(base ?? { price: 0, change: 0, changePercent: 0, volume: "—", market: "沪" as const }),
     code,
-    name: "演示标的",
+    name: base?.name ?? code,
+    availability: base ? "demo" : "missing",
     industry: "综合",
     marketCap: "—",
     pe: "—",
@@ -244,49 +254,55 @@ function metric(value: unknown, suffix = "x") {
 }
 
 export async function getStockDetailAsync(code: string): Promise<StockDetail> {
-  if (!isFreeDataEnabled()) return { ...getStockDetail(code), dataProvider: getProviderInfo() };
+  if (!isFreeDataEnabled()) return { ...getStockDetail(code), dataProvider: getProviderInfo(), asOf: "演示样本" };
   try {
-    const [historyPayload, conceptPayload] = await Promise.all([
-      fetchFreeHistory(code),
-      fetchFreeStockConcepts(code).catch(() => ({ items: [] }))
+    const [historyPayload, conceptPayload, quotesPayload] = await Promise.all([
+      fetchFreeHistory(code).catch(() => ({ provider: "", items: [] })),
+      fetchFreeStockConcepts(code).catch(() => ({ items: [] })),
+      fetchFreeQuotes([code]).catch(() => ({ items: [] }))
     ]);
-    const history = historyPayload.items;
+    const history = historyPayload.items.filter((row) => numberValue(row.close) > 0 && Number.isFinite(Date.parse(row.date))).sort((a, b) => a.date.localeCompare(b.date));
     const historySource = historyPayload.provider.startsWith("tencent-finance") ? "腾讯财经公开行情" : "BaoStock";
     const latest = history.at(-1);
-    if (!latest) return { ...getStockDetail(code), dataProvider: getDemoFallbackProviderInfo("本地数据服务未返回历史行情，已回退演示数据") };
+    const quote = quotesPayload.items.find((item) => item.code === code && Number.isFinite(item.price) && item.price > 0 && Number.isFinite(item.change) && Number.isFinite(item.change_percent));
+    if (!latest && !quote) return unavailableStock(code);
     const previous = history.at(-2) ?? latest;
-    const price = numberValue(latest.close);
-    const previousPrice = numberValue(latest.preclose) || numberValue(previous.close);
+    const price = numberValue(latest?.close);
+    const previousPrice = numberValue(latest?.preclose) || numberValue(previous?.close);
     const change = price - previousPrice;
-    const changePercent = numberValue(latest.pctChg) || (previousPrice ? change / previousPrice * 100 : 0);
-    const yearHistory = history.slice(-260).map((row) => numberValue(row.close)).filter(Boolean);
+    const changePercent = numberValue(latest?.pctChg) || (previousPrice ? change / previousPrice * 100 : 0);
+    const yearHighs = history.slice(-260).map((row) => numberValue(row.high)).filter(Boolean);
+    const yearLows = history.slice(-260).map((row) => numberValue(row.low)).filter(Boolean);
     const industry = conceptPayload.items[0]?.name ?? "A 股";
-    const name = watchlistQuotes.find((quote) => quote.code === code)?.name ?? code;
-    const signal = changePercent >= 3 ? "强势放量" : changePercent >= 0 ? "趋势观察" : "回撤观察";
+    const name = quote?.name ?? screenerUniverse.find((quote) => quote.code === code)?.name ?? code;
+    const signal = changePercent >= 3 ? "当日涨幅较大" : changePercent >= 0 ? "趋势观察" : "回撤观察";
     return {
       code,
       name,
-      price,
-      change,
-      changePercent,
-      volume: volumeLabel(numberValue(latest.amount)),
+      price: quote?.price ?? price,
+      priceLabel: quote ? "最新价（未复权）" : "历史收盘价（前复权）",
+      change: quote?.change ?? change,
+      changePercent: quote?.change_percent ?? changePercent,
+      asOf: quote?.as_of ?? latest?.date,
+      availability: "live",
+      volume: quote?.amount ? volumeLabel(quote.amount) : "—",
       market: marketForCode(code),
       signal,
       industry,
       marketCap: "—",
-      pe: metric(latest.peTTM),
-      pb: metric(latest.pbMRQ),
+      pe: metric(latest?.peTTM),
+      pb: metric(latest?.pbMRQ),
       roe: "—",
-      high52: Math.max(...yearHistory, price),
-      low52: Math.min(...yearHistory, price),
-      thesis: `最新交易日 ${latest.date} 收盘 ${price.toFixed(2)}，涨跌幅 ${changePercent.toFixed(2)}%。当前页面使用${historySource}历史行情与同花顺公开题材信息生成基础观察。`,
+      high52: Math.max(...yearHighs, price),
+      low52: Math.min(...yearLows, price),
+      thesis: latest ? `${latest.date} 前复权收盘价 ${price.toFixed(2)}，涨跌幅 ${changePercent.toFixed(2)}%。由${historySource}历史行情整理；尚未进行模型分析。` : "当前仅有最新报价，历史行情暂不可用；尚未进行模型分析。",
       risks: ["免费公开数据可能存在延迟或缺失", "仅有行情与题材标签，尚未接入完整财务和公告原文", "短线涨跌不代表趋势已经确认"],
-      news: [{ time: latest.date, source: `${historySource} / 同花顺公开页面`, title: `${industry}题材与行情数据已更新`, tone: "neutral" }],
+      news: latest ? [{ time: latest.date, source: historySource, title: "历史行情已更新；题材标签按可用数据展示", tone: "neutral" }] : [],
       history: history.map((row) => ({ date: row.date, close: numberValue(row.close), changePercent: numberValue(row.pctChg) })),
-      dataProvider: { ...getProviderInfo(), note: `${historySource} 历史行情 + 同花顺公开题材` }
+      dataProvider: { ...getProviderInfo(), note: `${latest ? historySource + " · 历史图为前复权口径" : "历史行情暂不可用"}；${quote ? "最新价为未复权报价" : "最新报价暂缺，显示历史前复权收盘价"}` }
     };
   } catch {
-    return { ...getStockDetail(code), dataProvider: getDemoFallbackProviderInfo("本地数据服务未响应，已回退演示数据") };
+    return unavailableStock(code);
   }
 }
 
@@ -297,17 +313,10 @@ export type ProviderInfo = {
   note: string;
 };
 
-function getDemoFallbackProviderInfo(note: string): ProviderInfo {
-  return { mode: "demo", label: "演示数据", configured: false, note };
-}
-
-function demoMarketSnapshot(note: string): MarketSnapshot {
+function unavailableMarketSnapshot(note: string): MarketSnapshot {
   return {
-    indexQuotes,
-    watchlistQuotes,
-    screenerUniverse,
-    latestNews,
-    provider: getDemoFallbackProviderInfo(note)
+    indexQuotes: [], watchlistQuotes: [], screenerUniverse: [], latestNews: [],
+    provider: { mode: "free-data", label: "行情暂不可用", configured: true, note }
   };
 }
 
@@ -319,7 +328,7 @@ export function getProviderInfo(): ProviderInfo {
       ? "free-data"
       : "demo";
   return mode === "ifind-mcp"
-    ? { mode, label: "iFinD MCP", configured: true, note: "服务端 MCP 数据通道已配置" }
+    ? { mode: "demo", label: "演示数据", configured: true, note: "iFinD 仅配置了连接检查，行情字段映射尚未接通" }
     : mode === "free-data"
       ? { mode, label: "本地免费数据", configured: true, note: "腾讯行情主源 / BaoStock 兜底 / 同花顺公开题材已接入" }
     : { mode, label: "演示数据", configured, note: configured ? "iFinD 已配置，当前仍使用演示模式" : "配置 iFinD MCP 后可切换真实数据" };
@@ -327,6 +336,35 @@ export function getProviderInfo(): ProviderInfo {
 
 export interface MarketDataProvider {
   getStockDetail(code: string): Promise<StockDetail>;
+}
+
+function unavailableStock(code: string): StockDetail {
+  return { ...getStockDetail(code), code, price: 0, change: 0, changePercent: 0, availability: "missing", thesis: "行情暂不可用", risks: ["当前没有可用行情"], news: [], dataProvider: { ...getProviderInfo(), note: "行情暂不可用，未使用演示值替代" } };
+}
+
+export async function getQuotesForCodes(codes: string[]): Promise<Quote[]> {
+  if (!codes.length) return [];
+  if (!isFreeDataEnabled()) return codes.map((code) => ({ ...getStockDetail(code), asOf: "演示样本" }));
+  const payload = await fetchFreeQuotes(codes).catch(() => ({ items: [] }));
+  return codes.map((code) => {
+    const live = payload.items.find((item) => item.code === code && Number.isFinite(item.price) && item.price > 0 && Number.isFinite(item.change_percent));
+    return live ? liveQuote(getStockDetail(code), live) : unavailableStock(code);
+  });
+}
+
+export async function getExecutionQuote(code: string): Promise<{ price: number; source: string; asOf: string }> {
+  if (process.env.MUCHEN_DATA_MODE === "ifind-mcp") throw new AppError("iFinD 行情尚未接通，无法创建模拟成交", 503);
+  if (isFreeDataEnabled()) {
+    const payload = await fetchFreeQuotes([code]);
+    const quote = payload.items.find((item) => item.code === code);
+    if (!quote || !Number.isFinite(quote.price) || quote.price <= 0 || !Number.isFinite(Date.parse(quote.as_of))) throw new AppError("缺少有效报价，无法模拟成交", 503);
+    if (Date.now() - Date.parse(quote.as_of) > 7 * 86_400_000) throw new AppError("报价已超过 7 天，无法模拟成交", 503);
+    if (Date.parse(quote.as_of) > Date.now() + 5 * 60_000) throw new AppError("报价时间异常，无法模拟成交", 503);
+    return { price: Math.round(quote.price * 100) / 100, source: payload.provider, asOf: quote.as_of };
+  }
+  const quote = screenerUniverse.find((item) => item.code === code);
+  if (!quote) throw new AppError("当前演示样本不包含该股票", 400);
+  return { price: quote.price, source: "演示样本价格", asOf: "演示样本" };
 }
 
 export class DemoMarketDataProvider implements MarketDataProvider {

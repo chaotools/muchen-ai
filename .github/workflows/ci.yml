@@ -17,6 +17,20 @@ jobs:
   verify:
     name: Typecheck and build
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: muchen_test
+          POSTGRES_PASSWORD: muchen_test
+          POSTGRES_DB: muchen_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U muchen_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -32,3 +46,16 @@ jobs:
 
       - name: Verify application
         run: npm run check
+
+      - name: Verify PostgreSQL transactions and user isolation
+        run: npm run test
+        env:
+          TEST_DATABASE_URL: postgresql://muchen_test:muchen_test@localhost:5432/muchen_test
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Verify historical data and fallback behavior
+        run: python -m unittest discover -s tests -p 'test_*.py'

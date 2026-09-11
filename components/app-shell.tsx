@@ -8,7 +8,7 @@ import LogoutButton from "@/components/logout-button";
 const navItems = [
   { href: "/", label: "市场驾驶舱", icon: "◈" },
   { href: "/topics", label: "题材研究", icon: "✦" },
-  { href: "/watchlist", label: "AI 自选", icon: "☆" },
+  { href: "/watchlist", label: "我的自选", icon: "☆" },
   { href: "/portfolio", label: "模拟持仓", icon: "▣" },
   { href: "/analysis", label: "研究报告", icon: "⌁" },
   { href: "/screener", label: "市场筛选", icon: "⌗" },
@@ -53,9 +53,9 @@ export default function AppShell({ children, dataMode = "demo" }: { children: Re
         <div className="sidebar-bottom">
           <div className="trial-card">
             <span className="eyebrow">TRIAL ACCESS</span>
-            <strong>研究权限 · 7 天</strong>
-            <p>连接数据后，开始你的第一份 AI 研究。</p>
-            <Link href="/login" className="small-button">获取邀请</Link>
+            <strong>邮箱验证登录</strong>
+            <p>从一个问题开始，保存可追溯的研究笔记。</p>
+            <Link href="/analysis" className="small-button">打开研究库</Link>
           </div>
           <div className="user-chip">
             <span className="avatar">M</span>
@@ -71,7 +71,7 @@ export default function AppShell({ children, dataMode = "demo" }: { children: Re
           <div className="top-actions">
             <StockSearch />
             <span className="status-pill"><span className="status-dot" />{dataLabel}</span>
-            <Link href="/login" className="login-link">登录 / 邀请</Link>
+            <Link href="/watchlist" className="login-link">我的自选</Link>
           </div>
         </header>
         {children}

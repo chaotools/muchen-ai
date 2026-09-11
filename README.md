@@ -1,101 +1,110 @@
 # 沐尘 MuChen
 
-中文 A 股 AI 投研与模拟盘 SaaS 的产品壳，当前以演示数据驱动。
+中文 A 股投研与模拟账户原型，使用 Next.js、TypeScript、PostgreSQL 和可选的 Python 行情网关。
 
-## 当前版本
+## 当前能力
 
-- Next.js + TypeScript
-- 简体中文深色投研界面
-- 市场驾驶舱、个股详情、AI 分析、自选股、模拟持仓、市场筛选、管理台
-- 全局股票搜索、问题驱动研究工作台、AI 评分筛选和本地自选状态
-- 客服邀请码登录、7 天签名会话和未登录路由保护
-- 默认使用演示数据，方便在没有 iFinD Key 时直接运行
-- 已预留 iFinD MCP 和 OpenAI 兼容模型的服务端配置
-- 模拟订单只返回演示成交，不连接券商、不触及真实资金
+- 邮箱验证码 + 客服邀请码登录，7 天签名会话；旧版仅凭邮箱签发的会话失效。
+- 自选股添加、移除、列表读取，按已认证用户 ID 隔离。
+- 保存研究问题、行情快照、来源、数据时间与风险，在研究库展开查看。
+- 模拟账户初始资金 100,000 元；服务端获取参考价，检查资金与持仓，以事务记账。重复提交相同订单编号不会重复扣款。
+- 客服邀请码管理与管理员控制中心，普通会员不能调用管理接口。
+- 真实行情缺失时显示不可用，不再用演示报价填补缺失。
 
-## 页面
+研究笔记当前是行情模板，未调用 AI 模型，置信度未评估。筛选覆盖固定的 10 只示例股票；真实模式下评分、估值和风险评级显示“未评估”。全市场证券搜索、公告检索、模型研究、策略回测尚未实现。题材关注目前仍是本机浏览器偏好，不与股票自选账户数据混用。
 
-- `/`：市场驾驶舱
-- `/screener`：行业、动能和 AI 评分筛选
-- `/analysis`：研究库和问题驱动研究工作台
-- `/watchlist`：自选股观察
-- `/portfolio`：模拟持仓和模拟订单
-- `/admin`：数据供应商和服务状态
-- `/support/login`：客服工作台登录
-- `/support`：客服独立邀请码管理
+## 启动与邮箱验证
 
-## 启动
+复制 `.env.example` 为 `.env.local`，填写：
+
+```env
+MUCHEN_DATA_MODE=demo
+MUCHEN_SESSION_SECRET=<至少32字符的随机密钥>
+RESEND_API_KEY=<Resend发送邮件的服务端密钥>
+MUCHEN_MAIL_FROM=沐尘 <login@你的已验证域名>
+MUCHEN_INVITE_CODE=<本地演示邀请码>
+```
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-打开 <http://localhost:3000>。
+邮件使用 [Resend Send Email API](https://resend.com/docs/api-reference/emails/send-email)，发件地址应来自已验证域名。用户发送邮箱验证码，再用验证码和邀请码登录。验证码只保存 HMAC 摘要，不返回浏览器、不写入日志；10 分钟过期、最多验证 5 次。每个邮箱发送间隔 60 秒，每小时最多 6 次；发送失败会作废对应验证码。
 
-## 本地免费数据服务
+可生成随机密钥：
 
-项目提供一个独立的免费数据网关，不把数据供应商代码耦合进 Next.js。它以腾讯财经公开行情提供最新交易日行情和前复权日 K 线，BaoStock 仅在主源不可用时兜底；同花顺公开页面适配用于题材成分。首次启动会在项目目录创建 `.venv-free-data` 并安装所需依赖。启动网关后，在本地 `.env.local` 中将前端切到真实数据模式：
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+```
+
+邮件服务或足够长度的会话密钥未配置时，登录会明确报错。开发环境不设置 `DATABASE_URL` 时，用户、自选、报告、订单与邀请码只在当前进程保存，重启即清空。生产环境必须配置 PostgreSQL。本版本移除了绕过登录的本地预览开关。
+
+## 数据库初始化与升级
+
+设置 `DATABASE_URL`，在部署新版本之前执行：
+
+```bash
+psql "$DATABASE_URL" -f db/schema.sql
+```
+
+脚本可重复执行：保留现有数据，新增邮箱验证、模拟账户与持仓表，扩展订单金额、报价时间和来源字段。旧 `PENDING_CONFIRMATION` 演示订单不视为成交，不参与账户计算。
+
+生产环境首次部署，先配置客服工作台并创建邀请码；配置数据库后不再读取环境变量中的本地演示邀请码。
+
+`MUCHEN_ADMIN_EMAILS` 是管理员初始化邮箱列表。完成邮箱验证和邀请码兑换后，才将对应用户数据库角色设为 ADMIN；业务权限从数据库读取。未设置名单时没有默认管理员。撤销管理员需要同时移出环境变量名单，并将 `users.role` 改为 MEMBER。
+
+升级后用户需要重新验证邮箱。旧 localStorage 中的股票自选不自动导入，避免同一浏览器上不同用户的记录被合并。
+
+## 模拟账户口径
+
+- 由服务端读取参考价，忽略客户端传入价格。缺失、无效、超过 7 天或时间异常（未来超过 5 分钟）的真实报价不能成交；iFinD 未接通取数时不创建模拟成交。
+- 买入检查现金，卖出检查持仓；金额按分计算，采用持仓加权成本。
+- 账户、持仓、成交在同一 PostgreSQL 事务更新，并锁定账户行；订单 UUID 用于幂等。同一编号携带不同交易参数会被拒绝。
+- 简化账本未模拟交易时段、T+1、涨跌停限制、费用和滑点，不连接券商或真实资金。
+- 行情缺失时不计算总权益；估算盈亏不代表真实投资表现。
+
+## 本地免费数据网关
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\start-free-data.ps1
 ```
 
-服务地址为 <http://127.0.0.1:8090>，接口文档为 <http://127.0.0.1:8090/docs>。
+脚本创建项目内虚拟环境并安装依赖。随后设置：
 
 ```env
 MUCHEN_DATA_MODE=free-data
 MUCHEN_DATA_SERVICE_URL=http://127.0.0.1:8090
 ```
 
-切换后，首页、自选、筛选、个股详情和题材页会从本地网关读取数据；题材热度和趋势是用公开题材成分股的腾讯财经行情样本计算的，事件流、完整财务和公告原文仍需后续接入专门数据源。
+[本地接口文档](http://127.0.0.1:8090/docs)。
 
-- `GET /health`：服务健康状态
-- `GET /api/stock/600519.SH/history`：免费历史 K 线
-- `GET /api/stock/000001.SZ/concepts`：股票所属同花顺题材
-- `GET /api/topic/885966/members`：同花顺题材成分股
+- 腾讯提供最新报价与前复权日线。历史日期、OHLC 不再被最新未复权报价覆盖；图表呈现日/周收盘线。
+- 历史不足时不绘制模拟曲线，历史接口失败时仍可展示有效最新报价。页面与研究证据区分“最新价（未复权）”和“历史收盘价（前复权）”；高低点仅代表返回的历史样本。
+- 历史请求默认 `adjustflag=2`（前复权）；`1`（后复权）、`3`（不复权）与非日线走 BaoStock，主备保持请求的复权口径。
+- 腾讯历史接口最多查询最近 1,000 根，不承诺任意远期的完整历史。当前前复权序列也不是回测所需的时点复权数据库。
+- 题材取公开列表前 5 只成分股计算样本指标；热度是规则得分。“大涨样本”表示涨幅 ≥9.5%，不等同于涨停或连板；连续上涨天数从最新样本日向前计算。
+- 题材缓存 15 分钟，后台刷新；页面不展示过期缓存，超过 1 小时不再返回旧样本。单个题材失败不丢弃其他成功题材。
+- 空题材样本和未匹配的题材不展示，不使用演示龙头填补。
+- 免费公开数据可能延迟或缺失，完整财务、公告与事件流尚未接入。
 
-免费公开数据仅用于本地研究和模拟，不能据此承诺商业再分发或实时稳定性；如需稳定的盘中行情、完整财务、公告与新闻，请替换为已授权的数据供应商。
+## 客服与供应商配置
 
-## 环境变量
+客服入口为 `/support/login`。设置 `MUCHEN_SUPPORT_EMAILS`、`MUCHEN_SUPPORT_ACCESS_KEY`、`MUCHEN_SUPPORT_SESSION_SECRET`；密钥使用至少 32 字符的独立随机值。客服和用户会话隔离，客服登录限流目前为进程内实现，多实例应由部署层补充共享限流。
 
-复制 `.env.example` 为 `.env.local`。仓库示例默认 `MUCHEN_DATA_MODE=demo`；本地免费数据模式请改为 `free-data` 并启动 8090 网关。
+iFinD 的 `IFIND_MCP_URL`、`IFIND_MCP_AUTH_KEY`、`IFIND_MCP_AUTH_MODE` 只放服务端。当前仅实现初始化和工具列表检查，未接行情字段映射；选择 `ifind-mcp` 后页面仍标注演示数据。预留的 `LLM_*` 配置尚未启用。
 
-## 邀请制登录
-
-所有业务页面和 API 默认需要登录。客服邀请码由 `MUCHEN_INVITE_CODE` 在服务端校验，登录后签发 7 天 HttpOnly 签名 Cookie。生产环境必须设置 `MUCHEN_SESSION_SECRET` 和 `MUCHEN_INVITE_CODE`，缺少任一配置时会拒绝登录；后续再将邀请码迁移到数据库或后台管理服务。
-
-配置 `DATABASE_URL` 后执行 `db/schema.sql`，登录用户、邀请码、兑换记录、自选股、模拟订单和研究报告即可进入 PostgreSQL 持久化层。`MUCHEN_ADMIN_EMAILS` 用逗号分隔管理员邮箱；未配置时，开发环境的已登录账号可进入邀请管理，生产环境默认没有管理员。
-
-## 客服工作台
-
-客服使用独立入口 `/support/login`，与用户侧登录 Cookie 分开。必须配置 `MUCHEN_SUPPORT_EMAILS`、`MUCHEN_SUPPORT_ACCESS_KEY` 和 `MUCHEN_SUPPORT_SESSION_SECRET` 后才能登录；两个密钥都必须是至少 32 个字符的独立随机值，不能使用示例、邀请码或用户侧会话密钥。生产环境缺少任一项时，客服登录会拒绝请求。
-
-可使用 Node.js 生成密钥：
+## 验证
 
 ```bash
-node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
+npm run check
+python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-客服登录接口会按来源地址限制连续失败次数。多实例部署时，应将该限流接入共享存储或边缘限流服务。没有 `DATABASE_URL` 时，客服工作台使用进程内演示存储；配置 PostgreSQL 并执行表结构后，邀请码才会持久化。
+Node 测试模拟邮件传输，不发送真实邮件。Python 回归直接执行网关原有适配函数并注入上游响应，无需安装第三方数据包。
 
-后续接入 iFinD MCP 时，Key 只能放在服务端环境变量中，不能放到浏览器端：
+设置独立且可清空的 `TEST_DATABASE_URL` 后执行 `npm run test`，验证 PostgreSQL 中的角色、自选、报告、并发订单、回滚与幂等。该测试会清空测试数据库相关表，不能指向开发或生产数据。CI 提供独立 PostgreSQL 16，并运行两种存储模式的测试。
 
-```env
-MUCHEN_DATA_MODE=ifind-mcp
-IFIND_MCP_URL=https://api-mcp.51ifind.com:8643/ds-mcp-servers/hexin-ifind-ds-stock-mcp
-IFIND_MCP_AUTH_KEY=your_server_side_key
-IFIND_MCP_AUTH_MODE=raw
-```
+## 页面
 
-`IFIND_MCP_AUTH_MODE` 默认使用 MCP 控制台示例中的原始 `Authorization` 值；如果供应商要求标准 Bearer 头，可改为 `bearer`。控制中心的“检查连接”会完成 MCP 初始化并读取工具列表，但真实个股字段映射仍需根据账号返回的工具 Schema 配置。
-
-## 目录约定
-
-- `app/`：Next.js 页面和服务端 API
-- `components/`：共享布局和交互组件
-- `lib/market.ts`：统一行情类型、演示数据、搜索和供应商状态
-- `components/stock-search.tsx`：全局搜索
-- `components/screener-table.tsx`：客户端筛选器
-- `components/research-workspace.tsx`：问题驱动研究入口
-- `app/api/`：后续接入真实 MCP、AI 和数据库的边界
+`/` 驾驶舱 · `/topics` 题材 · `/stocks/[code]` 个股 · `/screener` 样本筛选 · `/watchlist` 自选 · `/analysis` 研究库 · `/portfolio` 模拟账户 · `/admin` 管理员 · `/support` 客服

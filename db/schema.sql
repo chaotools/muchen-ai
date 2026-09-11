@@ -55,3 +55,22 @@ CREATE TABLE IF NOT EXISTS research_reports (
 CREATE INDEX IF NOT EXISTS invite_codes_created_at_idx ON invite_codes(created_at DESC);
 CREATE INDEX IF NOT EXISTS paper_orders_user_created_idx ON paper_orders(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS research_reports_user_created_idx ON research_reports(user_id, created_at DESC);
+
+-- 增量升级可以重复执行；旧版本用户会话在应用升级后失效。
+CREATE TABLE IF NOT EXISTS email_login_codes (
+  email TEXT PRIMARY KEY, digest TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0, sent_at TIMESTAMPTZ NOT NULL,
+  window_at TIMESTAMPTZ NOT NULL, sent_count INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS paper_accounts (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  cash_cents BIGINT NOT NULL CHECK (cash_cents >= 0)
+);
+CREATE TABLE IF NOT EXISTS paper_positions (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code TEXT NOT NULL, shares INTEGER NOT NULL CHECK (shares > 0),
+  cost_cents BIGINT NOT NULL CHECK (cost_cents >= 0), PRIMARY KEY (user_id, code)
+);
+ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS amount_cents BIGINT;
+ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS quote_as_of TEXT;
+ALTER TABLE paper_orders ADD COLUMN IF NOT EXISTS source TEXT;

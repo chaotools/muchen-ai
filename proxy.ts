@@ -11,9 +11,6 @@ export async function proxy(request: NextRequest) {
   const isSupportPath = pathname === "/support" || pathname.startsWith("/support/");
   const isSupportLogin = pathname === "/support/login";
   const isLoginPage = pathname === "/login";
-  const isLocalPreviewBypass = process.env.NODE_ENV !== "production"
-    && process.env.MUCHEN_LOCAL_PREVIEW_BYPASS === "true"
-    && ["localhost", "127.0.0.1"].includes(request.nextUrl.hostname);
   const session = await verifySession(request.cookies.get(sessionCookieName)?.value);
   const supportSession = await verifySupportSession(request.cookies.get(supportCookieName)?.value);
 
@@ -24,8 +21,10 @@ export async function proxy(request: NextRequest) {
     if (pathname.startsWith("/api/")) return NextResponse.json({ error: "请先登录客服工作台" }, { status: 401 });
     return NextResponse.redirect(new URL("/support/login", request.url));
   }
-  if (isLoginPage) return session || isLocalPreviewBypass ? NextResponse.redirect(new URL("/", request.url)) : NextResponse.next();
-  if (session || isLocalPreviewBypass) return NextResponse.next();
+  // A signed cookie may outlive a deleted user or the development memory store.
+  // Keep login reachable so page-level identity checks cannot create a redirect loop.
+  if (isLoginPage) return NextResponse.next();
+  if (session) return NextResponse.next();
   if (pathname.startsWith("/api/")) return NextResponse.json({ error: "请先登录沐尘" }, { status: 401 });
 
   const loginUrl = new URL("/login", request.url);

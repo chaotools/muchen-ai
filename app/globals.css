@@ -242,3 +242,5 @@ button { cursor:pointer; }
 .watch-card .mini-chart path[stroke="#fa7381"] { stroke: var(--down) !important; }
 @media (max-width:700px) { .research-progress-steps { grid-template-columns:1fr; }.inline-progress { position:static; width:auto; margin-top:12px; }.interactive-chart { padding-left:37px; }.chart-tooltip { top:7px; }.chart-legend { gap:10px; line-height:1.7; } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; } }
+
+.saved-report { margin-bottom:12px; line-height:1.8; }.saved-report summary { cursor:pointer; }.saved-report li { color:var(--soft); }.auth-card form>.secondary-button { margin-bottom:12px; }

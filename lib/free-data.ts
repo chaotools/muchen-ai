@@ -2,7 +2,7 @@ import type { Topic, TopicStock, TopicTrend } from "@/lib/topics";
 import { topicUniverse } from "@/lib/topics";
 
 const defaultServiceUrl = "http://127.0.0.1:8090";
-const serviceRequestTimeoutMs = 5_000;
+const serviceRequestTimeoutMs = 12_000;
 
 export type TopicSnapshot = {
   topics: Topic[];
@@ -17,6 +17,7 @@ export type FreeQuote = {
   change: number;
   change_percent: number;
   amount: number;
+  name?: string;
 };
 
 export type FreeHistoryRow = {
@@ -91,7 +92,7 @@ async function fetchFreeJson<T>(path: string): Promise<T> {
       signal: controller.signal
     });
     if (!response.ok) throw new Error(`本地免费数据服务返回 ${response.status}`);
-    return response.json() as Promise<T>;
+    return await response.json() as T;
   } catch (error) {
     if (controller.signal.aborted) throw new Error("本地免费数据服务响应超时");
     throw error;
@@ -106,6 +107,7 @@ export async function fetchFreeQuotes(codes: string[]) {
 
 export async function fetchFreeHistory(code: string, startDate?: string, endDate?: string) {
   const query = new URLSearchParams();
+  query.set("adjustflag", "2");
   if (startDate) query.set("start_date", startDate);
   if (endDate) query.set("end_date", endDate);
   const suffix = query.toString() ? `?${query.toString()}` : "";
@@ -135,17 +137,18 @@ function toTopicStock(member: FreeTopicMember): TopicStock {
 }
 
 export async function fetchFreeTopics(): Promise<Topic[]> {
-  const payload = await fetchFreeJson<{ items: FreeTopic[]; refreshing?: boolean }>("/api/topics");
+  const payload = await fetchFreeJson<{ items: FreeTopic[]; refreshing?: boolean; stale?: boolean }>("/api/topics");
+  if (payload.stale) throw new Error("题材缓存已过期，正在刷新");
   if (!payload.items.length) throw new Error(payload.refreshing ? "题材数据正在后台更新" : "题材数据暂不可用");
-  return payload.items.map((item) => {
+  return payload.items.flatMap((item) => {
     const template = topicUniverse.find((topic) => topic.id === item.id);
     const members = item.members.map(toTopicStock);
-    const leader = members[0] ?? template?.leader;
-    if (!template || !leader) throw new Error(`免费题材数据缺少模板：${item.id}`);
-    return {
+    const leader = members[0];
+    if (!template || !leader) return [];
+    return [{
       ...template,
       name: item.name,
-      description: `同花顺公开题材「${item.name}」，当前统计由腾讯财经公开行情样本计算。${template.description}`,
+      description: `同花顺公开题材「${item.name}」：取前 ${members.length} 只成分股作为样本，不代表整个板块。热度为规则计算；大涨样本指涨幅 ≥9.5%，不等同于涨停。`,
       trend: toTopicTrend(item.trend),
       heat: item.heat,
       changePercent: item.change_percent,
@@ -167,9 +170,9 @@ export async function fetchFreeTopics(): Promise<Topic[]> {
       })),
       events: [],
       relations: [],
-      dataStatus: "free-data",
+      dataStatus: "free-data" as const,
       asOf: item.updated_at
-    };
+    }];
   });
 }
 
@@ -179,6 +182,6 @@ export async function getTopicSnapshot(): Promise<TopicSnapshot> {
     const topics = await fetchFreeTopics();
     return { topics, mode: "free-data", note: "腾讯行情 + 同花顺题材 · 题材成分样本与最新交易日行情" };
   } catch {
-    return { topics: topicUniverse, mode: "demo", note: "本地数据服务暂不可用 · 已回退演示数据" };
+    return { topics: [], mode: "free-data", note: "题材数据正在更新或暂不可用，请稍后刷新" };
   }
 }

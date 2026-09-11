@@ -1,11 +1,34 @@
+import Link from "next/link";
 import AppShell from "@/components/app-shell";
 import OrderPanel from "@/components/order-panel";
+import { pageUser } from "@/lib/page-user";
+import { getPaperAccount, initialCashCents } from "@/lib/workspace";
+import { getProviderInfo, getQuotesForCodes } from "@/lib/market";
+import { isDatabaseConfigured } from "@/lib/db";
+const money = (cents: number) => (cents / 100).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const positions = [
-  { code: "600519.SH", name: "贵州茅台", shares: "200 股", price: 1488.8, cost: 1432.2, pnl: "+¥11,320", percent: "+3.95%" },
-  { code: "688981.SH", name: "中芯国际", shares: "500 股", price: 91.03, cost: 84.6, pnl: "+¥3,215", percent: "+7.60%" }
-];
-
-export default function PortfolioPage() {
-  return <AppShell><div className="page-wrap"><section className="hero-row"><div><span className="eyebrow">PAPER PORTFOLIO</span><h1>模拟持仓</h1><p className="hero-subtitle">只记录虚拟资金和可复盘的模拟决策，不连接真实账户。</p></div><span className="paper-badge">PAPER ONLY</span></section><section className="portfolio-metrics"><div><span>账户总权益</span><strong>¥128,540.20</strong><small className="positive">今日 +1.24%</small></div><div><span>可用现金</span><strong>¥63,214.80</strong><small>占比 49.2%</small></div><div><span>累计收益</span><strong className="positive">+¥8,540.20</strong><small className="positive">+7.12%</small></div><div><span>当前回撤</span><strong className="warning">-2.18%</strong><small>风险预算内</small></div></section><section className="portfolio-grid"><div className="market-card positions-card"><div className="card-title-row"><div><span className="eyebrow">CURRENT HOLDINGS</span><h2>当前持仓</h2></div><span className="muted">2 个标的</span></div><div className="position-list">{positions.map((position) => <div className="position-row" key={position.code}><div><strong>{position.name}</strong><small>{position.code} · {position.shares}</small></div><div><strong>¥{position.price.toFixed(2)}</strong><small>成本 ¥{position.cost.toFixed(2)}</small></div><div className="position-pnl"><strong className="positive">{position.pnl}</strong><small className="positive">{position.percent}</small></div><span>→</span></div>)}</div><div className="position-footer"><span>模拟成交记录 6 笔</span><span>最后更新 · 09:46</span></div></div><OrderPanel code="600519.SH" name="贵州茅台" price={1488.8} /></section><section className="market-card timeline-card"><div className="card-title-row"><div><span className="eyebrow">DECISION LOG</span><h2>决策流水</h2></div><span className="muted">可审计 · 仅模拟</span></div><div className="decision-line"><span className="timeline-dot green" /><div><strong>模拟买入 · 中芯国际</strong><p>基于放量突破观察，用户确认执行 500 股。</p></div><small>今天 09:32</small></div><div className="decision-line"><span className="timeline-dot amber" /><div><strong>AI 观察 · 宁德时代</strong><p>风险收益比不足，保持等待，不创建订单。</p></div><small>昨天 14:18</small></div></section><footer className="page-footer">模拟结果不代表真实投资表现。沐尘不连接证券账户、不接受委托交易。</footer></div></AppShell>;
+export default async function PortfolioPage() {
+  const user = await pageUser();
+  const account = await getPaperAccount(user.id);
+  const quotes = await getQuotesForCodes(account.positions.map((position) => position.code));
+  const complete = quotes.every((quote) => quote.availability !== "missing");
+  const marketValue = account.positions.reduce((sum, position) => sum + Math.round((quotes.find((quote) => quote.code === position.code)?.price ?? 0) * 100) * position.shares, 0);
+  const equity = account.cashCents + marketValue;
+  const provider = getProviderInfo();
+  return <AppShell dataMode={provider.mode}><div className="page-wrap">
+    <section className="hero-row"><div><span className="eyebrow">PAPER PORTFOLIO</span><h1>模拟持仓</h1><p className="hero-subtitle">初始虚拟资金 ¥100,000，交易会更新个人账户和成交记录。</p></div><span className="paper-badge">PAPER ONLY</span></section>
+    <p className="muted">{isDatabaseConfigured() ? "账户和订单已持久化" : "本地演示存储，服务重启后清空"} · 行情按页面载入时的最新可用数据估值</p>
+    <section className="portfolio-metrics"><div><span>估算总权益</span><strong>{complete ? `¥${money(equity)}` : "行情暂缺"}</strong></div><div><span>可用现金</span><strong>¥{money(account.cashCents)}</strong></div><div><span>累计盈亏（不含费用）</span><strong>{complete ? `¥${money(equity - initialCashCents)}` : "暂无法估值"}</strong></div><div><span>成交笔数</span><strong>{account.orders.length}</strong></div></section>
+    <section className="portfolio-grid"><div className="market-card"><h2>当前持仓</h2>
+      {!account.positions.length && <p className="muted">暂无持仓，提交模拟买入后会出现在这里。</p>}
+      {account.positions.map((position) => { const quote = quotes.find((item) => item.code === position.code); return <div className="position-row" key={position.code}>
+        <Link href={`/stocks/${position.code}`}><strong>{quote?.name ?? position.code}</strong><small>{position.shares} 股 · {position.code}</small></Link>
+        <div><strong>{quote?.availability !== "missing" ? `¥${quote?.price.toFixed(2)}` : "行情暂缺"}</strong><small>{quote?.asOf ?? "演示样本"}</small></div>
+        <div><strong>成本 ¥{money(position.costCents)}</strong><small>均价 ¥{money(position.costCents / position.shares)}</small></div>
+      </div>; })}
+    </div><OrderPanel code="600519.SH" name="贵州茅台" /></section>
+    <section className="section-block market-card"><h2>成交流水</h2>{!account.orders.length && <p className="muted">尚无成交记录。</p>}
+      {account.orders.map((order) => <div className="decision-line" key={order.id}><div><strong>{order.side === "BUY" ? "买入" : "卖出"} {order.code} · {order.shares} 股 · ¥{order.price.toFixed(2)}</strong><p>{order.source} · 报价时间 {order.asOf} · 金额 ¥{money(order.amountCents)}</p><small>{new Date(order.createdAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}</small></div></div>)}
+    </section>
+  </div></AppShell>;
 }

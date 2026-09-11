@@ -13,7 +13,23 @@ export type InviteRecord = {
 
 export type RedeemResult = { ok: true; userId: string } | { ok: false; reason: "invalid" | "expired" | "revoked" | "exhausted" | "database-not-configured" };
 
-const demoInvites: InviteRecord[] = [];
+const demoState = globalThis as typeof globalThis & { muchenDemoInvites?: InviteRecord[]; muchenRedemptions?: Set<string> };
+const demoInvites = demoState.muchenDemoInvites ??= [];
+const demoRedemptions = demoState.muchenRedemptions ??= new Set<string>();
+
+export function redeemDemoInvite(email: string, code: string): { ok: boolean } {
+  if (process.env.NODE_ENV === "production") return { ok: false };
+  ensureDemoInvite();
+  const invite = demoInvites.find((item) => item.code === code);
+  if (!invite || invite.revokedAt || (invite.expiresAt && Date.parse(invite.expiresAt) <= Date.now())) return { ok: false };
+  const key = `${email}:${code}`;
+  if (demoRedemptions.has(key)) return { ok: true };
+  if (invite.maxUses > 0 && invite.usedCount >= invite.maxUses) return { ok: false };
+  invite.usedCount++;
+  demoRedemptions.add(key);
+  if (invite.maxUses > 0 && invite.usedCount >= invite.maxUses) invite.status = "已用尽";
+  return { ok: true };
+}
 
 function ensureDemoInvite() {
   const code = getInviteCode();

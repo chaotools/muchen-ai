@@ -44,6 +44,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # 框架级漏洞影响整个认证边界；基线曾因缺少此步骤，让 next@16.3.4 的
+      # 11 条公告（含未认证 RCE）静默滞留两个月。
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Verify application
         run: npm run check
 

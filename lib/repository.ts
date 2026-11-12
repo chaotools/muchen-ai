@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/db";
 import { getInviteCode } from "@/lib/auth";
+import { isProductionLike } from "@/lib/runtime";
 
 export type InviteRecord = {
   code: string;
@@ -18,7 +19,7 @@ const demoInvites = demoState.muchenDemoInvites ??= [];
 const demoRedemptions = demoState.muchenRedemptions ??= new Set<string>();
 
 export function redeemDemoInvite(email: string, code: string): { ok: boolean } {
-  if (process.env.NODE_ENV === "production") return { ok: false };
+  if (isProductionLike()) return { ok: false };
   ensureDemoInvite();
   const invite = demoInvites.find((item) => item.code === code);
   if (!invite || invite.revokedAt || (invite.expiresAt && Date.parse(invite.expiresAt) <= Date.now())) return { ok: false };

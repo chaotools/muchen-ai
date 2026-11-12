@@ -38,7 +38,9 @@ npm run dev
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-邮件服务或足够长度的会话密钥未配置时，登录会明确报错。开发环境不设置 `DATABASE_URL` 时，用户、自选、报告、订单与邀请码只在当前进程保存，重启即清空。生产环境必须配置 PostgreSQL。本版本移除了绕过登录的本地预览开关。
+`MUCHEN_SESSION_SECRET` 在**所有环境**都必须是至少 32 字符的随机值，不再有开发用的硬编码回退；演示邀请码也只能来自 `MUCHEN_INVITE_CODE` 显式配置。邮件服务或会话密钥未配置时，登录会明确报错。登录与客服 Cookie 始终带 `Secure`。开发环境不设置 `DATABASE_URL` 时，用户、自选、报告、订单与邀请码只在当前进程保存，重启即清空；只要配置了 `DATABASE_URL`，就按持久化运行处理，不再允许降级到内存演示模式（此判断不依赖 `NODE_ENV`）。生产环境必须配置 PostgreSQL，远程连接请显式使用 `sslmode=require`。
+
+验证码发送除了每邮箱限流，还增加了按客户端 IP（20 次/小时）与全局（100 次/小时）限流，并校验跨站 `Origin`；限流键取可信代理覆盖/追加的地址，不接受客户端伪造的 `X-Forwarded-For` 最左值。会话新增 `MUCHEN_SESSION_EPOCH`，轮换该值可让所有已签发会话立即失效。
 
 ## 数据库初始化与升级
 
@@ -90,7 +92,7 @@ MUCHEN_DATA_SERVICE_URL=http://127.0.0.1:8090
 
 ## 客服与供应商配置
 
-客服入口为 `/support/login`。设置 `MUCHEN_SUPPORT_EMAILS`、`MUCHEN_SUPPORT_ACCESS_KEY`、`MUCHEN_SUPPORT_SESSION_SECRET`；密钥使用至少 32 字符的独立随机值。客服和用户会话隔离，客服登录限流目前为进程内实现，多实例应由部署层补充共享限流。
+客服入口为 `/support/login`。设置 `MUCHEN_SUPPORT_EMAILS`、`MUCHEN_SUPPORT_ACCESS_KEY`、`MUCHEN_SUPPORT_SESSION_SECRET`；两个密钥至少 32 字符，且**客服会话密钥不得与用户会话密钥相同**（客服工作台的配置检查会拒绝）。客服与用户会话通过 audience 域分隔并复核客服名单，访问密钥使用常量时间比较。客服登录失败限流为进程内实现且追踪键数量有上限；多实例部署应由部署层补充共享限流，并确保反向代理覆盖 `X-Real-IP` 或追加可信的 `X-Forwarded-For`。
 
 iFinD 的 `IFIND_MCP_URL`、`IFIND_MCP_AUTH_KEY`、`IFIND_MCP_AUTH_MODE` 只放服务端。当前仅实现初始化和工具列表检查，未接行情字段映射；选择 `ifind-mcp` 后页面仍标注演示数据。预留的 `LLM_*` 配置尚未启用。
 

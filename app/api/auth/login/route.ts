@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     if (!redemption.ok) throw new AppError("邀请码无效、已过期、已撤销或已用尽", 401);
     const user = await registerVerifiedUser(email);
     const response = NextResponse.json({ ok: true, user: { email: user.email } });
-    response.cookies.set({ name: sessionCookieName, value: await createSession(user.email, user.id), httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: sessionDurationSeconds });
+    response.cookies.set({ name: sessionCookieName, value: await createSession(user.email, user.id), httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: sessionDurationSeconds });
     return response;
   } catch (error) { return apiError(error); }
 }

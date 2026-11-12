@@ -1,6 +1,5 @@
 import { getDb } from "@/lib/db";
-import { getInviteCode } from "@/lib/auth";
-import { isProductionLike } from "@/lib/runtime";
+import { getInviteCode, isAdminEmail } from "@/lib/auth";
 
 export type InviteRecord = {
   code: string;
@@ -19,7 +18,8 @@ const demoInvites = demoState.muchenDemoInvites ??= [];
 const demoRedemptions = demoState.muchenRedemptions ??= new Set<string>();
 
 export function redeemDemoInvite(email: string, code: string): { ok: boolean } {
-  if (isProductionLike()) return { ok: false };
+  // 是否走演示分支由调用点（login/route.ts）的运行形态判断决定；
+  // 这里是纯内存函数，保持可独立测试。
   ensureDemoInvite();
   const invite = demoInvites.find((item) => item.code === code);
   if (!invite || invite.revokedAt || (invite.expiresAt && Date.parse(invite.expiresAt) <= Date.now())) return { ok: false };
@@ -56,7 +56,12 @@ export async function redeemInvite(email: string, code: string): Promise<RedeemR
     if (invite.revoked_at) { await client.query("ROLLBACK"); return { ok: false, reason: "revoked" }; }
     if (invite.expires_at && invite.expires_at.getTime() <= Date.now()) { await client.query("ROLLBACK"); return { ok: false, reason: "expired" }; }
 
-    const userResult = await client.query<{ id: string }>("INSERT INTO users(email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET last_login_at = NOW() RETURNING id", [email]);
+    // 邀请码兑换可能先于 registerVerifiedUser 创建用户；首次创建时就要写入正确角色，
+    // 且 ON CONFLICT 不再改写 role，避免管理员降级后被重新登录提升。
+    const userResult = await client.query<{ id: string }>(
+      "INSERT INTO users(email, role) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET last_login_at = NOW() RETURNING id",
+      [email, isAdminEmail(email) ? "ADMIN" : "MEMBER"]
+    );
     const userId = userResult.rows[0].id;
     const existing = await client.query("SELECT 1 FROM invite_redemptions WHERE invite_code = $1 AND user_id = $2", [code, userId]);
     if (existing.rowCount === 0) {

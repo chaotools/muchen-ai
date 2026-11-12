@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/db";
 import { AppError } from "@/lib/access";
+import { isProductionLike } from "@/lib/runtime";
 
 export type ResearchNote = {
   id: string; code: string; question: string; conclusion: string; confidence: string;
@@ -13,7 +14,7 @@ export const initialCashCents = 10_000_000;
 const globals = globalThis as typeof globalThis & { muchenWorkspaces?: Map<string, { watchlist: string[]; reports: ResearchNote[]; account: PaperAccount }> };
 const workspaces = globals.muchenWorkspaces ??= new Map<string, { watchlist: string[]; reports: ResearchNote[]; account: PaperAccount }>();
 function memory(userId: string) {
-  if (process.env.NODE_ENV === "production") throw new AppError("生产环境需要配置数据库", 503);
+  if (isProductionLike()) throw new AppError("生产环境需要配置数据库", 503);
   if (!workspaces.has(userId)) workspaces.set(userId, { watchlist: [], reports: [], account: { cashCents: initialCashCents, positions: [], orders: [] } });
   return workspaces.get(userId)!;
 }

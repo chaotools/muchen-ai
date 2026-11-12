@@ -1,5 +1,6 @@
 import type { Topic, TopicStock, TopicTrend } from "@/lib/topics";
 import { topicUniverse } from "@/lib/topics";
+import { isValidStockCode } from "@/lib/runtime";
 
 const defaultServiceUrl = "http://127.0.0.1:8090";
 const serviceRequestTimeoutMs = 12_000;
@@ -82,13 +83,23 @@ export function isFreeDataEnabled() {
   return process.env.MUCHEN_DATA_MODE === "free-data";
 }
 
-async function fetchFreeJson<T>(path: string): Promise<T> {
+// 相同路径的并发请求共享一次上游调用：网关是单进程 uvicorn，
+// 突发流量下不应为每个页面请求各发一遍相同的行情查询。
+const inFlight = new Map<string, Promise<unknown>>();
+
+async function requestFreeJson<T>(path: string): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), serviceRequestTimeoutMs);
   try {
+    const gatewayToken = process.env.MUCHEN_GATEWAY_TOKEN?.trim();
     const response = await fetch(`${getServiceUrl()}${path}`, {
       cache: "no-store",
-      headers: { "Cache-Control": "no-cache" },
+      headers: {
+        "Cache-Control": "no-cache",
+        ...(gatewayToken ? { "x-muchen-gateway-token": gatewayToken } : {})
+      },
+      // 网关是可信的本地服务；禁止跟随重定向，避免被引导到其它地址。
+      redirect: "error",
       signal: controller.signal
     });
     if (!response.ok) throw new Error(`本地免费数据服务返回 ${response.status}`);
@@ -101,11 +112,23 @@ async function fetchFreeJson<T>(path: string): Promise<T> {
   }
 }
 
+async function fetchFreeJson<T>(path: string): Promise<T> {
+  const key = `${getServiceUrl()}${path}`;
+  const pending = inFlight.get(key) as Promise<T> | undefined;
+  if (pending) return pending;
+  const request = requestFreeJson<T>(path).finally(() => inFlight.delete(key));
+  inFlight.set(key, request as Promise<unknown>);
+  return request;
+}
+
 export async function fetchFreeQuotes(codes: string[]) {
-  return fetchFreeJson<FreeQuotePayload>(`/api/quotes?codes=${encodeURIComponent(codes.join(","))}`);
+  const safeCodes = codes.filter(isValidStockCode);
+  if (!safeCodes.length) return { provider: "", items: [] };
+  return fetchFreeJson<FreeQuotePayload>(`/api/quotes?codes=${encodeURIComponent(safeCodes.join(","))}`);
 }
 
 export async function fetchFreeHistory(code: string, startDate?: string, endDate?: string) {
+  if (!isValidStockCode(code)) throw new Error("股票代码格式无效");
   const query = new URLSearchParams();
   query.set("adjustflag", "2");
   if (startDate) query.set("start_date", startDate);
@@ -115,6 +138,7 @@ export async function fetchFreeHistory(code: string, startDate?: string, endDate
 }
 
 export async function fetchFreeStockConcepts(code: string) {
+  if (!isValidStockCode(code)) return { items: [] };
   return fetchFreeJson<{ items: Array<{ concept_code: string; name: string; source: string; reason: string }> }>(`/api/stock/${encodeURIComponent(code)}/concepts`);
 }
 

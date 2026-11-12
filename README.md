@@ -38,7 +38,9 @@ npm run dev
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-邮件服务或足够长度的会话密钥未配置时，登录会明确报错。开发环境不设置 `DATABASE_URL` 时，用户、自选、报告、订单与邀请码只在当前进程保存，重启即清空。生产环境必须配置 PostgreSQL。本版本移除了绕过登录的本地预览开关。
+`MUCHEN_SESSION_SECRET` 在**所有环境**都必须是至少 32 字符的随机值，不再有开发用的硬编码回退；演示邀请码也只能来自 `MUCHEN_INVITE_CODE` 显式配置。邮件服务或会话密钥未配置时，登录会明确报错。登录与客服 Cookie 始终带 `Secure`。开发环境不设置 `DATABASE_URL` 时，用户、自选、报告、订单与邀请码只在当前进程保存，重启即清空；只要配置了 `DATABASE_URL`，就按持久化运行处理，不再允许降级到内存演示模式（此判断不依赖 `NODE_ENV`）。生产环境必须配置 PostgreSQL，远程连接请显式使用 `sslmode=require`。
+
+验证码发送除了每邮箱限流，还增加了按客户端 IP（20 次/小时）与全局（100 次/小时）限流，并校验跨站 `Origin`；限流键取可信代理覆盖/追加的地址，不接受客户端伪造的 `X-Forwarded-For` 最左值。会话新增 `MUCHEN_SESSION_EPOCH`，轮换该值可让所有已签发会话立即失效。
 
 ## 数据库初始化与升级
 
@@ -52,7 +54,7 @@ psql "$DATABASE_URL" -f db/schema.sql
 
 生产环境首次部署，先配置客服工作台并创建邀请码；配置数据库后不再读取环境变量中的本地演示邀请码。
 
-`MUCHEN_ADMIN_EMAILS` 是管理员初始化邮箱列表。完成邮箱验证和邀请码兑换后，才将对应用户数据库角色设为 ADMIN；业务权限从数据库读取。未设置名单时没有默认管理员。撤销管理员需要同时移出环境变量名单，并将 `users.role` 改为 MEMBER。
+`MUCHEN_ADMIN_EMAILS` 是管理员初始化邮箱列表。完成邮箱验证和邀请码兑换后，才在用户**首次创建**时把数据库角色设为 ADMIN；业务权限始终从数据库读取。未设置名单时没有默认管理员。角色不再在每次登录时重新提升，降级只需把 `users.role` 改为 MEMBER。
 
 升级后用户需要重新验证邮箱。旧 localStorage 中的股票自选不自动导入，避免同一浏览器上不同用户的记录被合并。
 
@@ -67,7 +69,7 @@ psql "$DATABASE_URL" -f db/schema.sql
 ## 本地免费数据网关
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start-free-data.ps1
+powershell -ExecutionPolicy RemoteSigned -Scope Process -File .\scripts\start-free-data.ps1
 ```
 
 脚本创建项目内虚拟环境并安装依赖。随后设置：
@@ -75,6 +77,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start-free-data.ps1
 ```env
 MUCHEN_DATA_MODE=free-data
 MUCHEN_DATA_SERVICE_URL=http://127.0.0.1:8090
+# 可选但建议：网关与 Next.js 服务端共用，配置后网关只接受携带该头的调用。
+MUCHEN_GATEWAY_TOKEN=<随机值>
 ```
 
 [本地接口文档](http://127.0.0.1:8090/docs)。
@@ -90,7 +94,7 @@ MUCHEN_DATA_SERVICE_URL=http://127.0.0.1:8090
 
 ## 客服与供应商配置
 
-客服入口为 `/support/login`。设置 `MUCHEN_SUPPORT_EMAILS`、`MUCHEN_SUPPORT_ACCESS_KEY`、`MUCHEN_SUPPORT_SESSION_SECRET`；密钥使用至少 32 字符的独立随机值。客服和用户会话隔离，客服登录限流目前为进程内实现，多实例应由部署层补充共享限流。
+客服入口为 `/support/login`。设置 `MUCHEN_SUPPORT_EMAILS`、`MUCHEN_SUPPORT_ACCESS_KEY`、`MUCHEN_SUPPORT_SESSION_SECRET`；两个密钥至少 32 字符，且**客服会话密钥不得与用户会话密钥相同**（客服工作台的配置检查会拒绝）。客服与用户会话通过 audience 域分隔并复核客服名单，访问密钥使用常量时间比较。客服登录失败限流为进程内实现且追踪键数量有上限；多实例部署应由部署层补充共享限流，并确保反向代理覆盖 `X-Real-IP` 或追加可信的 `X-Forwarded-For`。
 
 iFinD 的 `IFIND_MCP_URL`、`IFIND_MCP_AUTH_KEY`、`IFIND_MCP_AUTH_MODE` 只放服务端。当前仅实现初始化和工具列表检查，未接行情字段映射；选择 `ifind-mcp` 后页面仍标注演示数据。预留的 `LLM_*` 配置尚未启用。
 

@@ -40,7 +40,7 @@ export async function PATCH(request: Request) {
   const auth = await authorize(request);
   if ("response" in auth) return auth.response;
   const payload = await request.json().catch(() => null) as { code?: unknown } | null;
-  const code = typeof payload?.code === "string" ? payload.code.trim() : "";
+  const code = typeof payload?.code === "string" ? payload.code.trim().slice(0, 80) : "";
   if (!code) return NextResponse.json({ error: "邀请码不能为空" }, { status: 400 });
   const revoked = isDatabaseConfigured() ? await revokeInvite(code) : revokeDemoInvite(code);
   return revoked ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "邀请码不存在或已经撤销" }, { status: 404 });

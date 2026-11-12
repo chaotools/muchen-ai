@@ -1,6 +1,8 @@
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { getDb } from "@/lib/db";
 import { AppError } from "@/lib/access";
+import { assertEmailSendAllowed } from "@/lib/email-send-rate-limit";
+import { isProductionLike } from "@/lib/runtime";
 
 type Challenge = { digest: string; expires: number; attempts: number; sent: number; window: number; count: number };
 const globalState = globalThis as typeof globalThis & { muchenEmailCodes?: Map<string, Challenge> };
@@ -13,10 +15,12 @@ function digest(email: string, code: string) {
   return createHmac("sha256", secret).update(email + ":" + code).digest("hex");
 }
 
-export async function requestEmailCode(email: string) {
+export async function requestEmailCode(email: string, clientIp = "unknown") {
+  // 按邮箱的限流只保护单个收件箱；这里补按 IP 与全局限流，防止换邮箱刷发信。
+  assertEmailSendAllowed(clientIp);
   if (!process.env.RESEND_API_KEY || !process.env.MUCHEN_MAIL_FROM) throw new AppError("邮箱验证服务尚未配置，请联系管理员", 503);
   const db = getDb();
-  if (!db && process.env.NODE_ENV === "production") throw new AppError("生产环境需要配置数据库", 503);
+  if (!db && isProductionLike()) throw new AppError("生产环境需要配置数据库", 503);
   const code = randomInt(0, 1_000_000).toString().padStart(6, "0");
   const hash = digest(email, code);
   const now = Date.now();
@@ -68,7 +72,7 @@ export async function consumeEmailCode(email: string, code: string): Promise<boo
     } catch (error) { await client.query("ROLLBACK"); throw error; }
     finally { client.release(); }
   }
-  if (process.env.NODE_ENV === "production") return false;
+  if (isProductionLike()) return false;
   const item = codes.get(email);
   if (!item || item.expires <= Date.now() || item.attempts >= 5) return false;
   item.attempts++;

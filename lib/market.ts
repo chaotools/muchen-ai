@@ -1,4 +1,5 @@
 import { IfindMcpClient } from "@/lib/ifind-mcp";
+import { isValidStockCode } from "@/lib/runtime";
 import { AppError } from "@/lib/access";
 import { fetchFreeHistory, fetchFreeQuotes, fetchFreeStockConcepts, isFreeDataEnabled } from "@/lib/free-data";
 
@@ -254,6 +255,8 @@ function metric(value: unknown, suffix = "x") {
 }
 
 export async function getStockDetailAsync(code: string): Promise<StockDetail> {
+  // 路径参数可直接来自 /stocks/[code]；统一在这里拦截，避免污染网关上游请求。
+  if (!isValidStockCode(code)) return unavailableStock(code);
   if (!isFreeDataEnabled()) return { ...getStockDetail(code), dataProvider: getProviderInfo(), asOf: "演示样本" };
   try {
     const [historyPayload, conceptPayload, quotesPayload] = await Promise.all([
@@ -358,6 +361,8 @@ export async function getExecutionQuote(code: string): Promise<{ price: number; 
     const payload = await fetchFreeQuotes([code]);
     const quote = payload.items.find((item) => item.code === code);
     if (!quote || !Number.isFinite(quote.price) || quote.price <= 0 || !Number.isFinite(Date.parse(quote.as_of))) throw new AppError("缺少有效报价，无法模拟成交", 503);
+    // 网关被投毒时，异常高价不应成为模拟成交的依据。
+    if (quote.price > 100_000) throw new AppError("报价超出合理范围，无法模拟成交", 503);
     if (Date.now() - Date.parse(quote.as_of) > 7 * 86_400_000) throw new AppError("报价已超过 7 天，无法模拟成交", 503);
     if (Date.parse(quote.as_of) > Date.now() + 5 * 60_000) throw new AppError("报价时间异常，无法模拟成交", 503);
     return { price: Math.round(quote.price * 100) / 100, source: payload.provider, asOf: quote.as_of };

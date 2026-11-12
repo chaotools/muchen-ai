@@ -11,17 +11,21 @@ It exposes OpenAPI docs at http://127.0.0.1:8090/docs.
 
 from __future__ import annotations
 
+import os
 import re
+import secrets
 import threading
 import time
 from datetime import date, timedelta
 from typing import Any
+from urllib.parse import quote
 
 import adata
 import baostock as bs
 import requests
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import uvicorn
 
 
@@ -37,6 +41,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 可选回环 token：不配置时保持原有本机行为；配置后只接受 Next.js 服务端调用，
+# 避免同机其它进程直接投毒行情数据（模拟盘定价依赖该网关）。
+_gateway_token = os.environ.get("MUCHEN_GATEWAY_TOKEN", "").strip()
+
+
+@app.middleware("http")
+async def require_gateway_token(request: Request, call_next):
+    if _gateway_token and request.url.path != "/health":
+        provided = request.headers.get("x-muchen-gateway-token", "")
+        if not secrets.compare_digest(provided, _gateway_token):
+            return JSONResponse(status_code=401, content={"detail": "unauthorized"})
+    return await call_next(request)
+
 
 _baostock_lock = threading.Lock()
 _baostock_logged_in = False
@@ -64,16 +82,22 @@ def _json_records(frame: Any, limit: int | None = None) -> list[dict[str, Any]]:
     return records
 
 
+# 严格白名单：只接受 600000.SH / SH.600000 / 600000 三种形式。
+# 之前只检查数字前缀，含 & # ? 的后缀会被拼进上游 URL query 造成参数注入。
+_STOCK_CODE_PATTERN = re.compile(r"^(?:(SH|SZ|BJ)\.(\d{6})|(\d{6})\.(SH|SZ|BJ)|(\d{6}))$", re.IGNORECASE)
+
+
 def _normalise_stock_code(value: str) -> str:
     raw = value.strip().upper()
-    if "." in raw:
-        left, right = raw.split(".", 1)
-        if left in {"SH", "SZ", "BJ"} and right.isdigit():
-            return f"{left.lower()}.{right.zfill(6)}"
-        if right in {"SH", "SZ", "BJ"} and left.isdigit():
-            return f"{right.lower()}.{left.zfill(6)}"
+    match = _STOCK_CODE_PATTERN.fullmatch(raw)
+    if not match:
+        raise HTTPException(status_code=400, detail="股票代码格式无效")
+    if match.group(1):
+        return f"{match.group(1).lower()}.{match.group(2)}"
+    if match.group(4):
+        return f"{match.group(4).lower()}.{match.group(3)}"
 
-    code = raw.zfill(6)
+    code = match.group(5)
     if code.startswith(("600", "601", "603", "605", "688", "689")):
         market = "sh"
     elif code.startswith(("000", "001", "002", "003", "300", "301", "399")):
@@ -88,6 +112,18 @@ def _normalise_stock_code(value: str) -> str:
 def _display_stock_code(value: str) -> str:
     market, code = value.split(".", 1)
     return f"{code}.{market.upper()}"
+
+
+def _parse_iso_date(value: str, field: str) -> date:
+    if len(value) > 10:
+        raise HTTPException(status_code=400, detail=f"{field} 格式无效")
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"{field} 格式无效") from None
+    if parsed > date.today() + timedelta(days=1):
+        raise HTTPException(status_code=400, detail=f"{field} 不能超过今天")
+    return parsed
 
 
 def _number(value: str | float | int | None) -> float:
@@ -115,7 +151,7 @@ def _fetch_tencent_quotes(stock_codes: list[str]) -> dict[str, dict[str, Any]]:
     symbols = list(dict.fromkeys(_tencent_symbol(code) for code in stock_codes))
     if not symbols:
         return {}
-    content = _tencent_get(f"https://qt.gtimg.cn/q={','.join(symbols)}").content.decode("gbk", errors="replace")
+    content = _tencent_get(f"https://qt.gtimg.cn/q={quote(','.join(symbols), safe=',')}").content.decode("gbk", errors="replace")
     quotes: dict[str, dict[str, Any]] = {}
     for matched in re.finditer(r'v_([a-z]{2}\d+)="([^"]*)";', content):
         symbol, raw = matched.groups()
@@ -491,10 +527,10 @@ def sources() -> list[dict[str, str]]:
 
 
 @app.get("/api/quotes")
-def quotes(codes: str = Query(min_length=3)) -> dict[str, Any]:
+def quotes(codes: str = Query(min_length=3, max_length=200)) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
-    stock_codes = list(dict.fromkeys(item.strip() for item in codes.split(",") if item.strip()))
+    stock_codes = list(dict.fromkeys(item.strip() for item in codes.split(",") if item.strip()))[:20]
     try:
         tencent_quotes = _fetch_tencent_quotes(stock_codes)
     except (HTTPException, requests.RequestException, ValueError, KeyError, TypeError):
@@ -580,6 +616,16 @@ def stock_history(
     frequency: str = "d",
     adjustflag: str = "2",
 ) -> dict[str, Any]:
+    if frequency not in {"d", "w", "m"}:
+        raise HTTPException(status_code=400, detail="frequency 无效")
+    if adjustflag not in {"1", "2", "3"}:
+        raise HTTPException(status_code=400, detail="adjustflag 无效")
+    start = _parse_iso_date(start_date, "start_date")
+    end = _parse_iso_date(end_date, "end_date")
+    if start > end or (end - start).days > 366 * 10:
+        raise HTTPException(status_code=400, detail="查询日期区间无效")
+    # 白名单校验放在最前面，避免非法代码进入任何上游 URL。
+    _normalise_stock_code(stock_code)
     items, provider = _query_history_with_provider(stock_code, start_date, end_date, frequency, adjustflag)
     return {
         "provider": provider,
@@ -604,7 +650,7 @@ def stock_concepts(stock_code: str) -> dict[str, Any]:
 
 @app.get("/api/topic/{index_code}/members")
 def topic_members(index_code: str, limit: int = Query(default=500, ge=1, le=1000)) -> dict[str, Any]:
-    if not index_code.isdigit() or not index_code.startswith("8"):
+    if len(index_code) > 12 or not index_code.isdigit() or not index_code.startswith("8"):
         raise HTTPException(status_code=400, detail="同花顺题材指数代码通常以 8 开头")
     try:
         frame = adata.stock.info.concept_constituent_ths(index_code=index_code)

@@ -16,3 +16,10 @@ export function trustedClientIp(request: Request) {
   const forwarded = headers.get("x-forwarded-for")?.split(",").map((part) => part.trim()).filter(Boolean) ?? [];
   return realIp || forwarded.at(-1) || "unknown";
 }
+
+const STOCK_CODE_PATTERN = /^\d{6}\.(SH|SZ|BJ)$/;
+
+/** 所有进入行情网关的业务代码都必须先过这里，防止路径参数污染上游 URL。 */
+export function isValidStockCode(code: unknown): code is string {
+  return typeof code === "string" && STOCK_CODE_PATTERN.test(code);
+}

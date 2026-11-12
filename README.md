@@ -54,7 +54,7 @@ psql "$DATABASE_URL" -f db/schema.sql
 
 生产环境首次部署，先配置客服工作台并创建邀请码；配置数据库后不再读取环境变量中的本地演示邀请码。
 
-`MUCHEN_ADMIN_EMAILS` 是管理员初始化邮箱列表。完成邮箱验证和邀请码兑换后，才将对应用户数据库角色设为 ADMIN；业务权限从数据库读取。未设置名单时没有默认管理员。撤销管理员需要同时移出环境变量名单，并将 `users.role` 改为 MEMBER。
+`MUCHEN_ADMIN_EMAILS` 是管理员初始化邮箱列表。完成邮箱验证和邀请码兑换后，才在用户**首次创建**时把数据库角色设为 ADMIN；业务权限始终从数据库读取。未设置名单时没有默认管理员。角色不再在每次登录时重新提升，降级只需把 `users.role` 改为 MEMBER。
 
 升级后用户需要重新验证邮箱。旧 localStorage 中的股票自选不自动导入，避免同一浏览器上不同用户的记录被合并。
 
@@ -69,7 +69,7 @@ psql "$DATABASE_URL" -f db/schema.sql
 ## 本地免费数据网关
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start-free-data.ps1
+powershell -ExecutionPolicy RemoteSigned -Scope Process -File .\scripts\start-free-data.ps1
 ```
 
 脚本创建项目内虚拟环境并安装依赖。随后设置：
@@ -77,6 +77,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start-free-data.ps1
 ```env
 MUCHEN_DATA_MODE=free-data
 MUCHEN_DATA_SERVICE_URL=http://127.0.0.1:8090
+# 可选但建议：网关与 Next.js 服务端共用，配置后网关只接受携带该头的调用。
+MUCHEN_GATEWAY_TOKEN=<随机值>
 ```
 
 [本地接口文档](http://127.0.0.1:8090/docs)。

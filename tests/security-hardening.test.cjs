@@ -139,3 +139,53 @@ test("M-02 客服失败限流不能被伪造 XFF 绕过", () => {
   for (let i = 0; i < 5; i++) supportRate.recordSupportLoginFailure(make());
   assert.ok(supportRate.getSupportLoginRetryAfterSeconds(make()) > 0);
 });
+
+test("M-05 非法股票代码在进入网关前被拦截", async () => {
+  process.env.MUCHEN_DATA_MODE = "free-data";
+  const savedFetch = global.fetch;
+  let calls = 0;
+  global.fetch = async () => { calls += 1; return Response.json({ provider: "test", items: [] }); };
+  try {
+    const { getStockDetailAsync } = require("../lib/market.ts");
+    const { isValidStockCode } = runtime;
+    assert.equal(isValidStockCode("600519.SH"), true);
+    assert.equal(isValidStockCode("600000&q=sh000001"), false);
+    const stock = await getStockDetailAsync("600000&q=sh000001");
+    assert.equal(stock.availability, "missing");
+    assert.equal(calls, 0);
+  } finally {
+    global.fetch = savedFetch;
+    process.env.MUCHEN_DATA_MODE = "demo";
+  }
+});
+
+test("L-01 异常高价不能用于模拟成交", async () => {
+  process.env.MUCHEN_DATA_MODE = "free-data";
+  const savedFetch = global.fetch;
+  global.fetch = async () => Response.json({
+    provider: "test",
+    items: [{ code: "600519.SH", price: 1e9, change: 0, change_percent: 0, amount: 0, as_of: new Date().toISOString() }]
+  });
+  try {
+    const { getExecutionQuote } = require("../lib/market.ts");
+    await assert.rejects(getExecutionQuote("600519.SH"), /超出合理范围/);
+  } finally {
+    global.fetch = savedFetch;
+    process.env.MUCHEN_DATA_MODE = "demo";
+  }
+});
+
+test("L-04 相同路径并发请求共享一次上游调用", async () => {
+  process.env.MUCHEN_DATA_MODE = "free-data";
+  const savedFetch = global.fetch;
+  let calls = 0;
+  global.fetch = async () => { calls += 1; return Response.json({ provider: "test", items: [] }); };
+  try {
+    const { fetchFreeQuotes } = require("../lib/free-data.ts");
+    await Promise.all([fetchFreeQuotes(["600519.SH"]), fetchFreeQuotes(["600519.SH"])]);
+    assert.equal(calls, 1);
+  } finally {
+    global.fetch = savedFetch;
+    process.env.MUCHEN_DATA_MODE = "demo";
+  }
+});

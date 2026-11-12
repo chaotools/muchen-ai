@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { requireUser, apiError } from "@/lib/access";
-import { getInviteCode } from "@/lib/auth";
 import { isDatabaseConfigured } from "@/lib/db";
 import { createInvite, listInviteCodes } from "@/lib/repository";
 import { NextResponse } from "next/server";
@@ -15,7 +14,8 @@ async function authorize(request: Request) {
 export async function GET(request: Request) {
   const auth = await authorize(request);
   if ("response" in auth) return auth.response;
-  if (!isDatabaseConfigured()) return NextResponse.json({ databaseConfigured: false, items: [{ code: getInviteCode(), maxUses: null, usedCount: null, expiresAt: null, status: "环境变量邀请码" }] });
+  // 未配置数据库时不回显环境变量里的邀请码（属于服务端配置秘密）。
+  if (!isDatabaseConfigured()) return NextResponse.json({ databaseConfigured: false, items: [] });
   try {
     return NextResponse.json({ databaseConfigured: true, items: await listInviteCodes() });
   } catch {

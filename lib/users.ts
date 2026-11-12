@@ -11,7 +11,7 @@ export async function registerVerifiedUser(email: string): Promise<User> {
   const db = getDb();
   if (db) {
     const result = await db.query<User>(
-      "INSERT INTO users(email, role) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET last_login_at = NOW(), role = CASE WHEN EXCLUDED.role = 'ADMIN' THEN 'ADMIN' ELSE users.role END RETURNING id, email, role",
+      "INSERT INTO users(email, role) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET last_login_at = NOW() RETURNING id, email, role",
       [email, isAdminEmail(email) ? "ADMIN" : "MEMBER"]
     );
     return result.rows[0];
